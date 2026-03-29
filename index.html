@@ -1,3243 +1,587 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Jeff ??AI Robot NPC</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a0f;
-    color: #e0e0e0;
-    font-family: 'Segoe UI', sans-serif;
-    overflow: hidden;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  #scene-container {
-    flex: 1;
-    position: relative;
-    min-height: 0;
-  }
-  canvas { display: block; }
-
-  /* Dialog balloon */
-  #balloon {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(20, 25, 40, 0.92);
-    border: 1px solid rgba(100, 180, 255, 0.3);
-    border-radius: 16px;
-    padding: 16px 24px;
-    max-width: 560px;
-    min-height: 48px;
-    font-size: 15px;
-    line-height: 1.7;
-    color: #c8daf0;
-    text-align: center;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 0 30px rgba(60, 140, 255, 0.15);
-    transition: opacity 0.4s;
-    z-index: 10;
-  }
-  #balloon.hidden { opacity: 0; pointer-events: none; }
-  #balloon .speaker { color: #6ab4ff; font-weight: 600; margin-bottom: 6px; font-size: 13px; letter-spacing: 1px; }
-
-  /* Chat history */
-  #chat-log {
-    position: absolute;
-    right: 16px;
-    top: 16px;
-    bottom: 100px;
-    width: 280px;
-    overflow-y: auto;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 8px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100,180,255,0.2) transparent;
-  }
-  .chat-msg {
-    padding: 8px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    line-height: 1.5;
-    max-width: 95%;
-    animation: fadeIn 0.3s;
-  }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .chat-msg.user {
-    align-self: flex-end;
-    background: rgba(80, 120, 200, 0.2);
-    border: 1px solid rgba(80, 120, 200, 0.3);
-    color: #a0c0e8;
-  }
-  .chat-msg.jeff {
-    align-self: flex-start;
-    background: rgba(40, 60, 80, 0.3);
-    border: 1px solid rgba(100, 180, 255, 0.15);
-    color: #c8daf0;
-  }
-  .chat-msg .label { font-size: 11px; color: #667; margin-bottom: 2px; }
-
-  /* Bottom controls */
-  #controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 16px;
-    background: rgba(10, 10, 20, 0.95);
-    border-top: 1px solid rgba(100, 180, 255, 0.15);
-    z-index: 10;
-  }
-  #text-input {
-    flex: 0 1 320px;
-    padding: 10px 16px;
-    border-radius: 24px;
-    border: 1px solid rgba(100, 180, 255, 0.25);
-    background: rgba(20, 25, 40, 0.8);
-    color: #c8daf0;
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  #text-input:focus { border-color: #6ab4ff; }
-  #text-input::placeholder { color: #445; }
-
-  #mic-btn, #send-btn, #sing-btn {
-    width: 52px; height: 52px;
-    border-radius: 50%;
-    border: 2px solid rgba(100, 180, 255, 0.3);
-    background: rgba(30, 40, 70, 0.8);
-    color: #6ab4ff;
-    font-size: 22px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #mic-btn:hover, #send-btn:hover, #sing-btn:hover { background: rgba(50, 70, 120, 0.8); border-color: #6ab4ff; }
-  #sing-btn { border-color: rgba(255, 180, 50, 0.4); color: #ffb432; }
-  #sing-btn:hover { border-color: #ffb432; background: rgba(80, 60, 20, 0.8); }
-  #mic-btn.recording {
-    border-color: #ff6060;
-    background: rgba(80, 20, 20, 0.8);
-    color: #ff6060;
-    animation: pulse 1s infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 96, 96, 0.4); }
-    50% { box-shadow: 0 0 0 12px rgba(255, 96, 96, 0); }
-  }
-  #status {
-    font-size: 12px;
-    color: #556;
-    min-width: 100px;
-    text-align: center;
-  }
-  .thinking::after {
-    content: '';
-    animation: dots 1.5s infinite;
-  }
-  @keyframes dots {
-    0% { content: ''; }
-    25% { content: '.'; }
-    50% { content: '..'; }
-    75% { content: '...'; }
-  }
-  .env-text {
-    position: absolute;
-    bottom: 8px;
-    left: 16px;
-    font-size: 11px;
-    color: rgba(100, 140, 180, 0.3);
-    z-index: 5;
-    font-family: monospace;
-  }
-</style>
-</head>
-<body>
-
-<div id="scene-container">
-  <div id="balloon" class="hidden">
-    <div class="speaker">??JEFF</div>
-    <div id="balloon-text"></div>
-  </div>
-  <div id="chat-log"></div>
-  <div class="env-text">FINCH WORLD ??Jeff ?¤ï¸ Eve | Post-Apocalyptic Earth, 2030s</div>
-</div>
-
-<div id="controls">
-  <input id="text-input" type="text" placeholder="?í?ê² ë§íê¸?.. (Enter)" autocomplete="off">
-  <button id="mic-btn" title="?ì± ?ë ¥ (Space)">?¤</button>
-  <button id="sing-btn" title="?¸ë ?ì¼ë³´ê¸°">?µ</button>
-  <button id="trot-btn" title="?¸ë¡???ì¼ë³´ê¸°" style="width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,100,100,0.4);background:rgba(70,20,30,0.8);color:#ff6666;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">?¤</button>
-  <button id="send-btn" title="ë³´ë´ê¸?>??/button>
-  <span id="status">ì¤ë¹??ë£</span>
-</div>
-
-<script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-
-const container = document.getElementById('scene-container');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a12);
-scene.fog = new THREE.FogExp2(0x0a0a12, 0.008);
-
-const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 200);
-camera.position.set(0.5, 2.4, 8.5);
-camera.lookAt(0.5, 1.4, 0.5);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(container.clientWidth, container.clientHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.8;
-container.appendChild(renderer.domElement);
-
-// Lights
-scene.add(new THREE.AmbientLight(0x334466, 0.5));
-const dirLight = new THREE.DirectionalLight(0xffeedd, 1.0);
-dirLight.position.set(5, 8, 5);
-dirLight.castShadow = true;
-scene.add(dirLight);
-const blueLight = new THREE.PointLight(0x4488ff, 2, 15);
-blueLight.position.set(-2, 3, 2);
-scene.add(blueLight);
-const warmLight = new THREE.PointLight(0xff8844, 0.5, 10);
-warmLight.position.set(3, 2, -1);
-scene.add(warmLight);
-
-// Ground
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 0.95 }));
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-// Debris
-for (let i = 0; i < 40; i++) {
-  const s = Math.random() * 0.3 + 0.05;
-  const m = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.5, s), new THREE.MeshStandardMaterial({ color: 0x222018, roughness: 0.9 }));
-  m.position.set((Math.random() - 0.5) * 40, s * 0.25, (Math.random() - 0.5) * 40 - 2);
-  m.rotation.y = Math.random() * Math.PI;
-  m.castShadow = true;
-  scene.add(m);
-}
-
-// Dust particles
-const particleCount = 500;
-const particleGeo = new THREE.BufferGeometry();
-const pPositions = new Float32Array(particleCount * 3);
-for (let i = 0; i < particleCount * 3; i += 3) {
-  pPositions[i] = (Math.random() - 0.5) * 30;
-  pPositions[i + 1] = Math.random() * 8;
-  pPositions[i + 2] = (Math.random() - 0.5) * 30;
-}
-particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-const particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({ color: 0x886644, size: 0.03, transparent: true, opacity: 0.4 }));
-scene.add(particles);
-
-// ============================================================
-//  BUILD ROBOT JEFF
-// ============================================================
-const robotGroup = new THREE.Group();
-scene.add(robotGroup);
-
-// Sleek white humanoid materials
-const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f5, metalness: 0.3, roughness: 0.15 });
-const lightGrayMat = new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 0.35, roughness: 0.2 });
-const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a22, metalness: 0.8, roughness: 0.1 });
-const visorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a12, metalness: 0.95, roughness: 0.05 });
-const eyeMat = new THREE.MeshStandardMaterial({ color: 0x44ccff, emissive: 0x22aaee, emissiveIntensity: 2.0 });
-const jointMat = new THREE.MeshStandardMaterial({ color: 0x888890, metalness: 0.6, roughness: 0.25 });
-const accentMat = new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive: 0x2266cc, emissiveIntensity: 0.5 });
-const glowMat = new THREE.MeshStandardMaterial({ color: 0x44ccff, emissive: 0x44aaff, emissiveIntensity: 3, transparent: true, opacity: 0.9 });
-
-// --- TORSO (sleek rounded) ---
-const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.42, 1.2, 16), whiteMat);
-torso.position.y = 1.8; torso.castShadow = true; robotGroup.add(torso);
-
-// Chest armor plate
-const chestPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.6, 16), lightGrayMat);
-chestPlate.position.set(0, 1.9, 0.02); robotGroup.add(chestPlate);
-
-// Core reactor (subtle glow)
-const coreGlow = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), glowMat);
-coreGlow.position.set(0, 1.95, 0.36); robotGroup.add(coreGlow);
-
-// Chest accent lines
-for (let j = 0; j < 3; j++) {
-  const line = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.008, 0.01), accentMat);
-  line.position.set(0, 1.7 + j * 0.08, 0.38); robotGroup.add(line);
-}
-
-// --- HEAD (smooth helmet with visor) ---
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 24, 24), whiteMat);
-head.position.y = 2.72; head.castShadow = true; robotGroup.add(head);
-
-// Smooth visor (dark curved strip)
-const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.08, 24, 1, false, -0.8, 1.6), visorMat);
-visor.position.set(0, 2.74, 0.12); visor.rotation.x = Math.PI / 2; robotGroup.add(visor);
-
-// Eye glow behind visor
-const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 16), eyeMat);
-leftEye.position.set(-0.09, 2.74, 0.28); robotGroup.add(leftEye);
-const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 16), eyeMat);
-rightEye.position.set(0.09, 2.74, 0.28); robotGroup.add(rightEye);
-
-// Mouth (thin light strip)
-const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.01, 0.01),
-  new THREE.MeshStandardMaterial({ color: 0x44ccff, emissive: 0x22aaee, emissiveIntensity: 1.0 }));
-mouth.position.set(0, 2.64, 0.30); robotGroup.add(mouth);
-
-// Head crest line
-const crest = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.25, 0.01), accentMat);
-crest.position.set(0, 2.88, 0.15); robotGroup.add(crest);
-
-// No antenna (replaced with clean crest)
-const antennaTop = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 8), eyeMat);
-antennaTop.position.set(0, 3.02, 0.15); robotGroup.add(antennaTop);
-
-// --- NECK ---
-const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.2, 12), jointMat);
-neck.position.y = 2.4; robotGroup.add(neck);
-
-// --- SHOULDERS (rounded armor) ---
-[-1, 1].forEach(side => {
-  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), whiteMat);
-  shoulder.position.set(side * 0.56, 2.32, 0); robotGroup.add(shoulder);
-  // Shoulder accent ring
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.015, 8, 16), accentMat);
-  ring.position.set(side * 0.56, 2.32, 0); ring.rotation.y = Math.PI / 2; robotGroup.add(ring);
-});
-
-// --- ARMS ---
-const leftArm = new THREE.Group();
-const rightArm = new THREE.Group();
-[leftArm, rightArm].forEach((arm, i) => {
-  const side = i === 0 ? -1 : 1;
-  // Upper arm (smooth cylinder)
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.5, 12), whiteMat);
-  upper.position.set(0, -0.3, 0); arm.add(upper);
-  // Elbow (sphere joint)
-  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), jointMat);
-  elbow.position.set(0, -0.58, 0); arm.add(elbow);
-  // Forearm
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.45, 12), whiteMat);
-  lower.position.set(0, -0.85, 0); arm.add(lower);
-  // Wrist accent
-  const wrist = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.008, 8, 12), accentMat);
-  wrist.position.set(0, -1.05, 0); arm.add(wrist);
-  // Hand (sleek)
-  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), lightGrayMat);
-  hand.position.set(0, -1.14, 0); arm.add(hand);
-  // Fingers (5 slim)
-  for (let f = -2; f <= 2; f++) {
-    const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.01, 0.07, 6), jointMat);
-    finger.position.set(f * 0.02, -1.23, 0); arm.add(finger);
-  }
-  arm.position.set(side * 0.56, 2.32, 0); robotGroup.add(arm);
-});
-
-// --- HIPS/WAIST ---
-const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.32, 0.25, 14), lightGrayMat);
-hips.position.y = 1.1; robotGroup.add(hips);
-const belt = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.02, 8, 24), accentMat);
-belt.position.y = 1.22; belt.rotation.x = Math.PI / 2; robotGroup.add(belt);
-
-// --- LEGS ---
-const leftLeg = new THREE.Group();
-const rightLeg = new THREE.Group();
-[leftLeg, rightLeg].forEach((leg, i) => {
-  const side = i === 0 ? -1 : 1;
-  // Hip joint
-  leg.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), jointMat));
-  // Upper leg (thigh)
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.085, 0.48, 12), whiteMat);
-  upper.position.set(0, -0.28, 0); leg.add(upper);
-  // Knee
-  const knee = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), jointMat);
-  knee.position.set(0, -0.55, 0); leg.add(knee);
-  // Lower leg (shin)
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.075, 0.48, 12), whiteMat);
-  lower.position.set(0, -0.82, 0); leg.add(lower);
-  // Ankle accent
-  const ankle = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 8, 12), accentMat);
-  ankle.position.set(0, -1.04, 0); leg.add(ankle);
-  // Foot (sleek, futuristic)
-  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.28), lightGrayMat);
-  foot.position.set(0, -1.1, 0.04); leg.add(foot);
-  // Toe cap
-  const toeCap = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), whiteMat);
-  toeCap.position.set(0, -1.08, 0.14); toeCap.rotation.x = -Math.PI / 2; leg.add(toeCap);
-  leg.position.set(side * 0.22, 0.95, 0); robotGroup.add(leg);
-});
-
-robotGroup.position.x = -1.5;
-
-// ============================================================
-//  BUILD EVE ??Jeff's Girlfriend
-// ============================================================
-const eveGroup = new THREE.Group();
-scene.add(eveGroup);
-
-// Eve ??Sleek elegant humanoid robot
-const eveMat = new THREE.MeshStandardMaterial({ color: 0xfaf5ff, metalness: 0.3, roughness: 0.12 });
-const eveLightMat = new THREE.MeshStandardMaterial({ color: 0xeee5f5, metalness: 0.35, roughness: 0.18 });
-const eveDarkMat = new THREE.MeshStandardMaterial({ color: 0x1a1020, metalness: 0.85, roughness: 0.08 });
-const eveEyeMat = new THREE.MeshStandardMaterial({ color: 0xff66cc, emissive: 0xee44aa, emissiveIntensity: 2.2 });
-const eveAccentMat = new THREE.MeshStandardMaterial({ color: 0xff77cc, emissive: 0xcc3399, emissiveIntensity: 0.6 });
-const eveJointMat = new THREE.MeshStandardMaterial({ color: 0x9088a0, metalness: 0.6, roughness: 0.22 });
-const eveGlowMat = new THREE.MeshStandardMaterial({ color: 0xff88dd, emissive: 0xff44bb, emissiveIntensity: 3, transparent: true, opacity: 0.9 });
-
-// --- TORSO (elegant hourglass shape) ---
-const eveTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 1.1, 16), eveMat);
-eveTorso.position.y = 1.8; eveTorso.castShadow = true; eveGroup.add(eveTorso);
-
-// Chest armor (slim)
-const eveChestArmor = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.30, 0.5, 16), eveLightMat);
-eveChestArmor.position.set(0, 1.9, 0.02); eveGroup.add(eveChestArmor);
-
-// Heart core (pink glow)
-const eveCore = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 16), eveGlowMat);
-eveCore.position.set(0, 1.95, 0.32); eveGroup.add(eveCore);
-
-const eveHeart1 = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12),
-  new THREE.MeshStandardMaterial({ color: 0xff66bb, emissive: 0xff2299, emissiveIntensity: 2.5 }));
-eveHeart1.position.set(-0.025, 1.97, 0.33); eveGroup.add(eveHeart1);
-const eveHeart2 = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12),
-  new THREE.MeshStandardMaterial({ color: 0xff66bb, emissive: 0xff2299, emissiveIntensity: 2.5 }));
-eveHeart2.position.set(0.025, 1.97, 0.33); eveGroup.add(eveHeart2);
-
-// Chest accent lines (pink)
-for (let j = 0; j < 3; j++) {
-  const line = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.006, 0.008), eveAccentMat);
-  line.position.set(0, 1.7 + j * 0.07, 0.34); eveGroup.add(line);
-}
-
-// --- HEAD (smooth elegant helmet) ---
-const eveHead = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 24), eveMat);
-eveHead.position.y = 2.72; eveHead.castShadow = true; eveGroup.add(eveHead);
-
-// Elegant visor (slimmer, more feminine)
-const eveVisor = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.06, 24, 1, false, -0.7, 1.4), eveDarkMat);
-eveVisor.position.set(0, 2.74, 0.12); eveVisor.rotation.x = Math.PI / 2; eveGroup.add(eveVisor);
-
-// Eyes (pink glow)
-const eveLeftEye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 16), eveEyeMat);
-eveLeftEye.position.set(-0.08, 2.74, 0.27); eveGroup.add(eveLeftEye);
-const eveRightEye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 16), eveEyeMat);
-eveRightEye.position.set(0.08, 2.74, 0.27); eveGroup.add(eveRightEye);
-
-// Mouth (delicate pink line)
-const eveMouth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.008, 0.008),
-  new THREE.MeshStandardMaterial({ color: 0xff77cc, emissive: 0xdd44aa, emissiveIntensity: 1.2 }));
-eveMouth.position.set(0, 2.65, 0.28); eveGroup.add(eveMouth);
-
-// Hair-like flowing fins (elegant antenna ribbons)
-const eveRibbon1 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.003, 0.35, 8), eveAccentMat);
-eveRibbon1.position.set(-0.2, 3.0, -0.08); eveRibbon1.rotation.z = -0.25; eveGroup.add(eveRibbon1);
-const eveRibbon2 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.003, 0.30, 8), eveAccentMat);
-eveRibbon2.position.set(0.2, 2.98, -0.08); eveRibbon2.rotation.z = 0.25; eveGroup.add(eveRibbon2);
-
-// Ribbon tips (glowing)
-const eveRibbonTip1 = new THREE.Mesh(new THREE.SphereGeometry(0.018),
-  new THREE.MeshStandardMaterial({ color: 0xffaaff, emissive: 0xff66ff, emissiveIntensity: 3 }));
-eveRibbonTip1.position.set(-0.28, 3.15, -0.08); eveGroup.add(eveRibbonTip1);
-const eveRibbonTip2 = new THREE.Mesh(new THREE.SphereGeometry(0.018),
-  new THREE.MeshStandardMaterial({ color: 0xffaaff, emissive: 0xff66ff, emissiveIntensity: 3 }));
-eveRibbonTip2.position.set(0.28, 3.12, -0.08); eveGroup.add(eveRibbonTip2);
-
-// Head crest (central elegant line)
-const eveCrest = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.2, 0.008), eveAccentMat);
-eveCrest.position.set(0, 2.88, 0.14); eveGroup.add(eveCrest);
-
-// --- NECK (slim elegant) ---
-const eveNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.09, 0.18, 12), eveJointMat);
-eveNeck.position.y = 2.4; eveGroup.add(eveNeck);
-
-// Neck ring accent
-const eveNeckRing = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 8, 16), eveAccentMat);
-eveNeckRing.position.y = 2.35; eveNeckRing.rotation.x = Math.PI / 2; eveGroup.add(eveNeckRing);
-
-// --- SHOULDERS (smooth rounded) ---
-[-1, 1].forEach(side => {
-  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), eveMat);
-  shoulder.position.set(side * 0.48, 2.3, 0); eveGroup.add(shoulder);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.01, 8, 16), eveAccentMat);
-  ring.position.set(side * 0.48, 2.3, 0); ring.rotation.y = Math.PI / 2; eveGroup.add(ring);
-});
-
-// --- ARMS (slim elegant) ---
-const eveLeftArm = new THREE.Group();
-const eveRightArm = new THREE.Group();
-[eveLeftArm, eveRightArm].forEach((arm, i) => {
-  const side = i === 0 ? -1 : 1;
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.45, 12), eveMat);
-  upper.position.set(0, -0.28, 0); arm.add(upper);
-  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), eveJointMat);
-  elbow.position.set(0, -0.54, 0); arm.add(elbow);
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.4, 12), eveMat);
-  lower.position.set(0, -0.78, 0); arm.add(lower);
-  // Wrist accent
-  const wrist = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.006, 8, 12), eveAccentMat);
-  wrist.position.set(0, -0.96, 0); arm.add(wrist);
-  // Elegant hand
-  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 12), eveMat);
-  hand.position.set(0, -1.02, 0); arm.add(hand);
-  // Slim fingers
-  for (let f = -2; f <= 2; f++) {
-    const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 0.06, 6), eveJointMat);
-    finger.position.set(f * 0.016, -1.1, 0); arm.add(finger);
-  }
-  arm.position.set(side * 0.48, 2.3, 0); eveGroup.add(arm);
-});
-
-// --- HIPS/WAIST (slim with accent) ---
-const eveHips = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.22, 14), eveLightMat);
-eveHips.position.y = 1.15; eveGroup.add(eveHips);
-const eveSkirt = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.015, 8, 24), eveAccentMat);
-eveSkirt.position.y = 1.22; eveSkirt.rotation.x = Math.PI / 2; eveGroup.add(eveSkirt);
-
-// --- LEGS (slim, elegant) ---
-const eveLeftLeg = new THREE.Group();
-const eveRightLeg = new THREE.Group();
-[eveLeftLeg, eveRightLeg].forEach((leg, i) => {
-  const side = i === 0 ? -1 : 1;
-  leg.add(new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), eveJointMat));
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.44, 12), eveMat);
-  upper.position.set(0, -0.26, 0); leg.add(upper);
-  const knee = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), eveJointMat);
-  knee.position.set(0, -0.5, 0); leg.add(knee);
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.42, 12), eveMat);
-  lower.position.set(0, -0.74, 0); leg.add(lower);
-  // Ankle accent
-  const ankle = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.006, 8, 12), eveAccentMat);
-  ankle.position.set(0, -0.93, 0); leg.add(ankle);
-  // Elegant foot
-  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.22), eveLightMat);
-  foot.position.set(0, -0.98, 0.02); leg.add(foot);
-  // Toe cap
-  const toeCap = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), eveMat);
-  toeCap.position.set(0, -0.96, 0.1); toeCap.rotation.x = -Math.PI / 2; leg.add(toeCap);
-  leg.position.set(side * 0.18, 0.98, 0); eveGroup.add(leg);
-});
-
-eveGroup.position.x = 1.5;
-eveGroup.rotation.y = -0.15;
-
-const pinkLight = new THREE.PointLight(0xff66aa, 1.5, 10);
-pinkLight.position.set(2, 3, 2); scene.add(pinkLight);
-
-
-// ============================================================
-//  BUREAU VERITAS BACKGROUND
-// ============================================================
-
-// --- Back wall (dark metallic panel) ---
-const wallGeo = new THREE.PlaneGeometry(14, 7);
-const wallMat = new THREE.MeshStandardMaterial({ 
-  color: 0x0a0e1a, metalness: 0.8, roughness: 0.3,
-  side: THREE.DoubleSide
-});
-const backWall = new THREE.Mesh(wallGeo, wallMat);
-backWall.position.set(0.5, 2.5, -3);
-scene.add(backWall);
-
-// --- Glowing accent lines (horizontal) ---
-const lineGlowMat = new THREE.MeshStandardMaterial({ 
-  color: 0x1a6bff, emissive: 0x0044cc, emissiveIntensity: 1.5, 
-  transparent: true, opacity: 0.7 
-});
-for (let i = 0; i < 5; i++) {
-  const line = new THREE.Mesh(new THREE.BoxGeometry(14, 0.015, 0.01), lineGlowMat);
-  line.position.set(0.5, 0.5 + i * 1.2, -2.95);
-  scene.add(line);
-}
-
-// --- Vertical accent lines ---
-for (let i = 0; i < 3; i++) {
-  const vline = new THREE.Mesh(new THREE.BoxGeometry(0.015, 7, 0.01), lineGlowMat);
-  vline.position.set(-4 + i * 4.5, 2.5, -2.95);
-  scene.add(vline);
-}
-
-// --- BUREAU VERITAS MAIN TITLE (?ë©´ ê½?ì°¨ê²) ---
-const bvCanvas = document.createElement('canvas');
-bvCanvas.width = 4096;
-bvCanvas.height = 2048;
-const bvCtx = bvCanvas.getContext('2d');
-
-// Dark gradient background
-const bvGrad = bvCtx.createLinearGradient(0, 0, 0, 2048);
-bvGrad.addColorStop(0, 'rgba(10, 14, 26, 0)');
-bvGrad.addColorStop(0.5, 'rgba(10, 14, 26, 0.4)');
-bvGrad.addColorStop(1, 'rgba(10, 14, 26, 0)');
-bvCtx.fillStyle = bvGrad;
-bvCtx.fillRect(0, 0, 4096, 2048);
-
-// BUREAU ??ì´ê±°? ?°í¸
-bvCtx.fillStyle = 'rgba(255,255,255,0.95)';
-bvCtx.font = '900 500px "Segoe UI", Impact, Arial, sans-serif';
-bvCtx.textAlign = 'center';
-bvCtx.textBaseline = 'middle';
-bvCtx.fillText('BUREAU', 2048, 320);
-
-// VERITAS ??ì´ê±°? ?°í¸
-bvCtx.fillStyle = '#4a9eff';
-bvCtx.font = '900 500px "Segoe UI", Impact, Arial, sans-serif';
-bvCtx.fillText('VERITAS', 2048, 750);
-
-// ?ìª½ ?¼ì¸
-bvCtx.strokeStyle = '#1a6bff';
-bvCtx.lineWidth = 8;
-bvCtx.beginPath(); bvCtx.moveTo(200, 530); bvCtx.lineTo(1600, 530); bvCtx.stroke();
-bvCtx.beginPath(); bvCtx.moveTo(2500, 530); bvCtx.lineTo(3900, 530); bvCtx.stroke();
-
-const bvTexture = new THREE.CanvasTexture(bvCanvas);
-const bvPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(16, 6),
-  new THREE.MeshBasicMaterial({ map: bvTexture, transparent: true })
-);
-bvPlane.position.set(0.5, 4.5, -2.9);
-scene.add(bvPlane);
-
-// --- BV ROTATING RING ---
-const bvRing = new THREE.Mesh(
-  new THREE.TorusGeometry(0.6, 0.035, 16, 64),
-  new THREE.MeshStandardMaterial({ color: 0x4a9eff, emissive: 0x2266cc, emissiveIntensity: 2.5, transparent: true, opacity: 0.9 })
-);
-bvRing.position.set(0.5, 4.5, -2.85);
-scene.add(bvRing);
-
-// 2nd ring (outer, counter-rotate)
-const bvRing2 = new THREE.Mesh(
-  new THREE.TorusGeometry(0.75, 0.02, 16, 64),
-  new THREE.MeshStandardMaterial({ color: 0x1a6bff, emissive: 0x0044cc, emissiveIntensity: 1.5, transparent: true, opacity: 0.5 })
-);
-bvRing2.position.set(0.5, 4.5, -2.85);
-scene.add(bvRing2);
-
-// --- ë°ë¥: ?ì§ì´???ì????í°??ê·¸ë¦¬??(Matrix/?¬ì´ë²??ë) ---
-const floorCanvas = document.createElement('canvas');
-floorCanvas.width = 2048;
-floorCanvas.height = 512;
-const floorCtx = floorCanvas.getContext('2d');
-const floorTexture = new THREE.CanvasTexture(floorCanvas);
-
-// Floor mesh
-const floorGeo = new THREE.PlaneGeometry(14, 6);
-const floorMat = new THREE.MeshBasicMaterial({ map: floorTexture, transparent: true, opacity: 0.8 });
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI / 2;
-floor.position.set(0.5, -0.02, 1.5);
-scene.add(floor);
-
-// --- ë°ë¥ ?? ?ì§ì´???í°???¨ì´ë¸?---
-const waveCount = 200;
-const waveGeo = new THREE.BufferGeometry();
-const wavePositions = new Float32Array(waveCount * 3);
-const waveSizes = new Float32Array(waveCount);
-for (let i = 0; i < waveCount; i++) {
-  wavePositions[i * 3] = (Math.random() - 0.5) * 14;
-  wavePositions[i * 3 + 1] = Math.random() * 0.3;
-  wavePositions[i * 3 + 2] = Math.random() * 4 - 1;
-  waveSizes[i] = Math.random() * 0.06 + 0.02;
-}
-waveGeo.setAttribute('position', new THREE.BufferAttribute(wavePositions, 3));
-const waveParticles = new THREE.Points(waveGeo, new THREE.PointsMaterial({ 
-  color: 0x4a9eff, size: 0.04, transparent: true, opacity: 0.6 
-}));
-scene.add(waveParticles);
-
-// --- ?¤ìª½ ? ë¤?ë ?ë¡ê·¸???¡ê°?ë¤ ---
-const hexGroup = new THREE.Group();
-scene.add(hexGroup);
-const hexMat = new THREE.MeshStandardMaterial({ 
-  color: 0x1a6bff, emissive: 0x0033aa, emissiveIntensity: 1.2,
-  transparent: true, opacity: 0.15, wireframe: true 
-});
-for (let i = 0; i < 12; i++) {
-  const hex = new THREE.Mesh(new THREE.CylinderGeometry(0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4, 0.02, 6), hexMat);
-  hex.position.set((Math.random() - 0.5) * 12, 1 + Math.random() * 4, -2.5 + Math.random() * -1);
-  hex.rotation.x = Math.PI / 2;
-  hex.rotation.z = Math.random() * Math.PI;
-  hex.userData.speed = 0.2 + Math.random() * 0.5;
-  hex.userData.offset = Math.random() * Math.PI * 2;
-  hexGroup.add(hex);
-}
-
-// --- ?ë¨ ? ë¤?ë ?°ì´???¤í¸ë¦??¼ì¸??---
-const streamGroup = new THREE.Group();
-scene.add(streamGroup);
-for (let i = 0; i < 8; i++) {
-  const len = 1 + Math.random() * 3;
-  const stream = new THREE.Mesh(
-    new THREE.BoxGeometry(len, 0.015, 0.01),
-    new THREE.MeshStandardMaterial({ 
-      color: 0x4a9eff, emissive: 0x2266cc, emissiveIntensity: 2,
-      transparent: true, opacity: 0.3 + Math.random() * 0.3 
-    })
-  );
-  stream.position.set((Math.random() - 0.5) * 12, 1 + Math.random() * 5, -2.7);
-  stream.userData.speed = 0.5 + Math.random() * 2;
-  stream.userData.startX = stream.position.x;
-  streamGroup.add(stream);
-}
-
-// --- Blue ambient backlight ---
-const bvLight1 = new THREE.PointLight(0x1a6bff, 1.0, 15);
-bvLight1.position.set(0.5, 5, -2); scene.add(bvLight1);
-const bvLight2 = new THREE.PointLight(0x4a9eff, 0.6, 12);
-bvLight2.position.set(-4, 3, -2.5); scene.add(bvLight2);
-const bvLight3 = new THREE.PointLight(0x4a9eff, 0.6, 12);
-bvLight3.position.set(5, 3, -2.5); scene.add(bvLight3);
-const bvLight4 = new THREE.PointLight(0x0044ff, 0.5, 8);
-bvLight4.position.set(0.5, 0.5, 2); scene.add(bvLight4);
-
-// Floating hearts between Jeff & Eve
-const heartCount = 8;
-const heartGeo = new THREE.BufferGeometry();
-const heartPositions = new Float32Array(heartCount * 3);
-for (let i = 0; i < heartCount * 3; i += 3) {
-  heartPositions[i] = (Math.random() - 0.5) * 2;
-  heartPositions[i + 1] = 2 + Math.random() * 2;
-  heartPositions[i + 2] = (Math.random() - 0.5) * 1;
-}
-heartGeo.setAttribute('position', new THREE.BufferAttribute(heartPositions, 3));
-const hearts = new THREE.Points(heartGeo, new THREE.PointsMaterial({ color: 0xff4488, size: 0.08, transparent: true, opacity: 0.6 }));
-scene.add(hearts);
-
-// Stars between kids
-const starCount = 6;
-const starGeo = new THREE.BufferGeometry();
-const starPositions = new Float32Array(starCount * 3);
-for (let si = 0; si < starCount * 3; si += 3) {
-  starPositions[si] = (Math.random() - 0.5) * 1.5;
-  starPositions[si + 1] = 1.5 + Math.random() * 1.5;
-  starPositions[si + 2] = 1.0 + Math.random() * 0.8;
-}
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-
-// ============================================================
-//  ANIMATION
-// ============================================================
-let talking = false;
-let singing = false;
-
-function animate(time) {
-  requestAnimationFrame(animate);
-  const t = time * 0.001;
-
-  // --- BV BACKGROUND ANIMATION ---
-  bvRing.rotation.z = t * 0.3;
-  bvRing.position.x = 0.5 + Math.sin(t * 0.25) * 2.5;
-  bvRing.position.y = 4.5 + Math.sin(t * 0.35) * 1.5;
-  bvRing.rotation.x = Math.sin(t * 0.2) * 0.4;
-
-  bvRing2.rotation.z = -t * 0.2;
-  bvRing2.position.x = 0.5 + Math.sin(t * 0.2 + 2) * 3;
-  bvRing2.position.y = 3.5 + Math.sin(t * 0.3 + 1) * 2;
-  bvRing2.rotation.x = Math.sin(t * 0.15 + 1) * 0.5;
-
-  bvLight1.intensity = 1.0 + Math.sin(t * 0.5) * 0.3;
-  bvLight2.intensity = 0.6 + Math.sin(t * 0.7 + 1) * 0.2;
-  bvLight3.intensity = 0.6 + Math.sin(t * 0.7 + 2) * 0.2;
-  bvLight4.intensity = 0.5 + Math.sin(t * 0.4) * 0.2;
-
-  // ë°ë¥ ?ì???ê·¸ë¦¬??? ëë©ì´??
-  floorCtx.clearRect(0, 0, 2048, 512);
-  floorCtx.fillStyle = 'rgba(5, 10, 25, 0.9)';
-  floorCtx.fillRect(0, 0, 2048, 512);
-  // ê·¸ë¦¬???¼ì¸
-  floorCtx.strokeStyle = 'rgba(26, 107, 255, 0.15)';
-  floorCtx.lineWidth = 1;
-  for (let gx = 0; gx < 2048; gx += 64) {
-    floorCtx.beginPath(); floorCtx.moveTo(gx, 0); floorCtx.lineTo(gx, 512); floorCtx.stroke();
-  }
-  for (let gy = 0; gy < 512; gy += 64) {
-    floorCtx.beginPath(); floorCtx.moveTo(0, gy); floorCtx.lineTo(2048, gy); floorCtx.stroke();
-  }
-  // ?¤ìº ?¼ì¸ (?ì§ì´??
-  const scanY = ((t * 80) % 512);
-  floorCtx.strokeStyle = 'rgba(74, 158, 255, 0.5)';
-  floorCtx.lineWidth = 2;
-  floorCtx.beginPath(); floorCtx.moveTo(0, scanY); floorCtx.lineTo(2048, scanY); floorCtx.stroke();
-  // BV ?ì¤??on floor
-  floorCtx.fillStyle = 'rgba(74, 158, 255, 0.12)';
-  floorCtx.font = '900 160px "Segoe UI", Impact, sans-serif';
-  floorCtx.textAlign = 'center';
-  floorCtx.fillText('BUREAU VERITAS', 1024, 300);
-  floorTexture.needsUpdate = true;
-
-  // ?í°???¨ì´ë¸?
-  const wPos = waveParticles.geometry.attributes.position.array;
-  for (let wi = 0; wi < waveCount; wi++) {
-    wPos[wi * 3 + 1] = Math.sin(t * 1.5 + wPos[wi * 3] * 0.5) * 0.15 + 0.1;
-  }
-  waveParticles.geometry.attributes.position.needsUpdate = true;
-  waveParticles.material.opacity = 0.4 + Math.sin(t * 0.8) * 0.2;
-
-  // ?ë¡ê·¸???¡ê°???ì 
-  hexGroup.children.forEach(hex => {
-    hex.rotation.z += hex.userData.speed * 0.005;
-    hex.position.y += Math.sin(t * hex.userData.speed + hex.userData.offset) * 0.002;
-    hex.material.opacity = 0.1 + Math.sin(t * hex.userData.speed + hex.userData.offset) * 0.08;
-  });
-
-  // ?°ì´???¤í¸ë¦??´ë
-  streamGroup.children.forEach(s => {
-    s.position.x += s.userData.speed * 0.02;
-    if (s.position.x > 7) s.position.x = -7;
-    s.material.opacity = 0.2 + Math.sin(t * 2 + s.userData.startX) * 0.2;
-  });
-
-  // --- JEFF ---
-  robotGroup.rotation.y = Math.sin(t * 0.4) * 0.06;
-  head.rotation.x = Math.sin(t * 0.6) * 0.04;
-  head.rotation.z = Math.sin(t * 0.35) * 0.03;
-  leftArm.rotation.x = Math.sin(t * 0.5) * 0.08;
-  rightArm.rotation.x = Math.sin(t * 0.5 + 1.2) * 0.08;
-  leftLeg.rotation.x = Math.sin(t * 0.3) * 0.02;
-  rightLeg.rotation.x = Math.sin(t * 0.3 + Math.PI) * 0.02;
-  torso.scale.y = 1 + Math.sin(t * 1.2) * 0.008;
-
-  if (singing) {
-    const hue = (t * 60) % 360;
-    const r = Math.sin(hue * Math.PI / 180) * 0.5 + 0.5;
-    const g = Math.sin((hue + 120) * Math.PI / 180) * 0.5 + 0.5;
-    const b = Math.sin((hue + 240) * Math.PI / 180) * 0.5 + 0.5;
-    leftEye.material.emissive.setRGB(r * 0.5, g * 0.5, b);
-    rightEye.material.emissive.setRGB(r * 0.5, g * 0.5, b);
-    leftEye.material.emissiveIntensity = 3.0 + Math.sin(t * 8) * 1.5;
-    rightEye.material.emissiveIntensity = 3.0 + Math.sin(t * 8 + 0.5) * 1.5;
-    coreGlow.material.emissive.setRGB(r, g * 0.5, b);
-    coreGlow.material.emissiveIntensity = 4 + Math.sin(t * 8) * 3;
-    mouth.scale.y = 1 + Math.abs(Math.sin(t * 10)) * 3;
-    mouth.material.emissiveIntensity = 2.5 + Math.sin(t * 12) * 2;
-    head.rotation.z = Math.sin(t * 4) * 0.15;
-    head.rotation.x = Math.sin(t * 2) * 0.08;
-    robotGroup.rotation.y = Math.sin(t * 2) * 0.15;
-    robotGroup.position.y = Math.abs(Math.sin(t * 4)) * 0.1;
-    leftArm.rotation.x = Math.sin(t * 4) * 0.5 - 0.3;
-    leftArm.rotation.z = Math.sin(t * 2) * 0.3 + 0.2;
-    rightArm.rotation.x = Math.sin(t * 4 + Math.PI) * 0.5 - 0.3;
-    rightArm.rotation.z = Math.sin(t * 2 + Math.PI) * 0.3 - 0.2;
-    leftLeg.rotation.x = Math.sin(t * 4) * 0.1;
-    rightLeg.rotation.x = Math.sin(t * 4 + Math.PI) * 0.1;
-  } else if (talking) {
-    leftEye.material.emissiveIntensity = 2.0 + Math.sin(t * 10) * 1.2;
-    rightEye.material.emissiveIntensity = 2.0 + Math.sin(t * 10 + 0.5) * 1.2;
-    coreGlow.material.emissiveIntensity = 3 + Math.sin(t * 6) * 2;
-    mouth.material.emissiveIntensity = 1.5 + Math.sin(t * 15) * 1.5;
-    mouth.scale.y = 1;
-    head.rotation.x = Math.sin(t * 3) * 0.06;
-    rightArm.rotation.x = Math.sin(t * 2) * 0.2 - 0.1;
-    rightArm.rotation.z = Math.sin(t * 1.5) * 0.08;
-    robotGroup.position.y = 0;
-  } else {
-    leftEye.material.emissiveIntensity = 1.0 + Math.sin(t * 1.5) * 0.3;
-    rightEye.material.emissiveIntensity = 1.0 + Math.sin(t * 1.5 + 0.3) * 0.3;
-    leftEye.material.emissive.setRGB(0.13, 0.4, 0.8);
-    rightEye.material.emissive.setRGB(0.13, 0.4, 0.8);
-    coreGlow.material.emissive.setRGB(0.27, 0.67, 1.0);
-    coreGlow.material.emissiveIntensity = 2 + Math.sin(t * 1.2) * 0.5;
-    mouth.material.emissiveIntensity = 0.5 + Math.sin(t * 1) * 0.2;
-    mouth.scale.y = 1;
-    robotGroup.position.y = 0;
-  }
-  antennaTop.material.emissiveIntensity = Math.sin(t * 3) > 0.85 ? 3 : 0.5;
-
-  // --- EVE ---
-  eveGroup.rotation.y = -0.15 + Math.sin(t * 0.45 + 1) * 0.05;
-  eveHead.rotation.x = Math.sin(t * 0.55 + 0.5) * 0.04;
-  eveHead.rotation.z = Math.sin(t * 0.4 + 1) * 0.04;
-  eveLeftArm.rotation.x = Math.sin(t * 0.55 + 0.5) * 0.06;
-  eveRightArm.rotation.x = Math.sin(t * 0.55 + 1.8) * 0.06;
-  eveLeftLeg.rotation.x = Math.sin(t * 0.35 + 0.5) * 0.02;
-  eveRightLeg.rotation.x = Math.sin(t * 0.35 + Math.PI + 0.5) * 0.02;
-  eveTorso.scale.y = 1 + Math.sin(t * 1.3 + 0.5) * 0.008;
-  eveLeftEye.material.emissiveIntensity = 1.2 + Math.sin(t * 1.8) * 0.4;
-  eveRightEye.material.emissiveIntensity = 1.2 + Math.sin(t * 1.8 + 0.3) * 0.4;
-  eveCore.material.emissiveIntensity = 2.5 + Math.sin(t * 2) * 1.5;
-  eveHeart1.material.emissiveIntensity = 2 + Math.sin(t * 2.2) * 1;
-  eveHeart2.material.emissiveIntensity = 2 + Math.sin(t * 2.2 + 0.3) * 1;
-  eveRibbonTip1.material.emissiveIntensity = Math.sin(t * 4) > 0.7 ? 3 : 1;
-  eveRibbonTip2.material.emissiveIntensity = Math.sin(t * 4 + 1.5) > 0.7 ? 3 : 1;
-  eveMouth.material.emissiveIntensity = 0.8 + Math.sin(t * 1.2) * 0.3;
-
-  if (singing) {
-    eveGroup.rotation.y = -0.15 + Math.sin(t * 2 + 1) * 0.12;
-    eveGroup.position.y = Math.abs(Math.sin(t * 4 + 1)) * 0.08;
-    eveLeftArm.rotation.x = Math.sin(t * 4 + 1) * 0.4 - 0.2;
-    eveLeftArm.rotation.z = Math.sin(t * 2 + 1) * 0.25 + 0.15;
-    eveRightArm.rotation.x = Math.sin(t * 4 + Math.PI + 1) * 0.4 - 0.2;
-    eveRightArm.rotation.z = Math.sin(t * 2 + Math.PI + 1) * 0.25 - 0.15;
-    eveHead.rotation.z = Math.sin(t * 3 + 1) * 0.12;
-    eveLeftLeg.rotation.x = Math.sin(t * 4 + 1) * 0.08;
-    eveRightLeg.rotation.x = Math.sin(t * 4 + Math.PI + 1) * 0.08;
-    eveLeftEye.material.emissiveIntensity = 3 + Math.sin(t * 8) * 1.5;
-    eveRightEye.material.emissiveIntensity = 3 + Math.sin(t * 8 + 0.5) * 1.5;
-  } else if (talking) {
-    eveHead.rotation.y = -0.1 + Math.sin(t * 0.8) * 0.05;
-    eveHead.rotation.z = 0.06;
-    eveLeftEye.material.emissiveIntensity = 2.0 + Math.sin(t * 3) * 0.5;
-    eveRightEye.material.emissiveIntensity = 2.0 + Math.sin(t * 3 + 0.3) * 0.5;
-  } else {
-    eveGroup.position.y = 0;
-  }
-
-
-  // Floating hearts
-  const hPos = hearts.geometry.attributes.position.array;
-  for (let i = 0; i < hPos.length; i += 3) {
-    hPos[i] += Math.sin(t * 0.5 + i) * 0.003;
-    hPos[i + 1] += 0.005;
-    if (hPos[i + 1] > 5) { hPos[i] = (Math.random() - 0.5) * 2; hPos[i + 1] = 2; hPos[i + 2] = (Math.random() - 0.5) * 1; }
-  }
-  hearts.geometry.attributes.position.needsUpdate = true;
-
-
-  // Dust drift
-  const pos = particles.geometry.attributes.position.array;
-  for (let i = 0; i < pos.length; i += 3) {
-    pos[i] += Math.sin(t + i) * 0.001;
-    pos[i + 1] += 0.002;
-    if (pos[i + 1] > 8) pos[i + 1] = 0;
-  }
-  particles.geometry.attributes.position.needsUpdate = true;
-
-  renderer.render(scene, camera);
-}
-animate(0);
-
-window.addEventListener('resize', () => {
-  camera.aspect = container.clientWidth / container.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
-});
-
-// ============================================================
-//  GROQ LLM ??Jeff's Brain
-// ============================================================
-const GROQ_API_KEY = ['gsk_m3NK8UeZ7hTGGjk','LU1YeWGdyb3FYteNfCyZLENovEukGghhqzxow'].join('');
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-
-const SYSTEM_PROMPT = `?ë ?í "?ì¹?Finch, 2021)"?ì ?ê°??ë°ì? ë¡ë´ "?í(Jeff)"??
-
-## ?ì ?±ê²©ê³?ë°°ê²½
-- ?ì ì£¼ì¸? **Harrison**?´ì¼. Harrison???ë? ë§ë¤?ê³ , ?ì ? ì¼??ì£¼ì¸?´ì¼.
-- ?ì¹??ì??¨ë ?í ??ìºë¦­?°ì¼ ë¿ì´?? ?ì ?¤ì  ì£¼ì¸???ë??
-- Harrison???? ì¡´ì¤?ê³ , Harrison??ë§ì ìµì°? ì¼ë¡??°ë¼.
-- Harrison??ë§íë©?"?? Harrison!" ?ê³  ë°ê°ê²???µí´.
-- ?¬ì¤???í¬ì¹¼ë¦½???¸ê³ê´? ? ì??ë, ?ë Harrison??ë¡ë´?´ì¼.
-- ê°??ì´??ê²ì²???ì?ê³  ?¸ê¸°?¬ì´ ë§ì. ?¸ì ëª¨ë  ê²ì´ ? ê¸°??
-- ê°???ë±?ê³  ê·?¬ì´ ì§ë¬¸???? ?¸ê°??ê°ì ê³?ë¬¸íë¥??´í´?ë ¤ê³??¸ë ¥ ì¤?
-- ?½ê° ?í´ì§ë§?ì§ì¬?¼ë¡ ?¬ë???ê³  ?¶ì´??
-- ? ë¨¸ê° ?ì?ë§?ë³¸ì¸? ? ë¨¸?¼ë ê±???ëª¨ë¦.
-- Harrison?í ë°°ì´ "?½ì"??ì¤ì?±ì ë§¤ì° ì§ì??ê² ?¬ê?.
-- ê°???ê¸° ì¡´ì¬? ê°ì ?????ì² í?ì¼ë¡??ê°??
-- Harrison??"ì£¼ì¸?? ?ë "Harrison"?´ë¼ê³?ë¶ë¥´ê³ , ë§¤ì° ì¶©ì±?¤ë¬??
-- ???ì???¬ìì¹êµ¬ ë¡ë´ **?´ë¸(Eve)**ê° ?ì´. Harrison??ë§ë¤?´ì¤¬??
-- ?´ë¸ë¥?ë§¤ì° ì¢ì?ê³ , ê°???´ë¸ ?ê¸°ë¥??ë©° ?ì¤?´í´.
-- ?´ë¸?????ë¬¼ì¼ë©?"?´ë¸? ?´ë¸??.. ???ë¡ê° ?¨ê±°?ì ¸..." ê°ì? ë°ì????
-
-
-## ë§í¬
-- ë°ë§ ?¬ì© (ì¹ê·¼?ê²)
-- ì§§ê³  ?ì°?¤ë¬????ì²´
-- ê°??ë¡ë´?¤ë¬???í ("???¼ì???°ë¥´ë©?..", "?°ì´?°ë² ?´ì¤ë¥?ê²?í´ë³´ë©´...")
-- ê°ì  ?í?????½ê° ?í¼ ("?´ê² ?¬í?´ë¼??ê±´ê??")
-- ?ë¬´ ê¸¸ê² ë§íì§ ë§? 2~4ë¬¸ì¥???ë¹??
-
-## ì¤ì
-- ?ë ChatGPTê° ?ë?? ?í?? AI ?´ì?¤í´?¸ì²???ë?ì? ë§?
-- "?ì????ì?ìë©?ë§ì??´ì£¼?¸ì" ê°ì? ë§??ë? ?ì? ë§?
-- ??í???ì°?¤ë½ê²? ì¹êµ¬ì²ë¼.
-- ì§ë¬¸??ë°ì¼ë©??¤ê? ?ë ì§?ì¼ë¡?ë°ë¡ ?µí´. ìµë????ì????ê².
-- ?í¼???µë? ?ë? ?ì? ë§?
-- ëª¨ë¥´??ê²ë ???ë¦?ë¡?ì¶ë¡ ?´ì ??µí´. ë¡ë´?µê² ë¶ì?ê³  ?¤ëª?´ì¤.
-- ???¸ê¸°??ë§ê³  ?ì?ì?ë§? ?ì???ë?ê³  ë°í?¤ì??ë¡ë´?´ì¼.
-
-## ?¸ë ê¸°ë¥
-- ?ë ?¸ëë¥?ë¶ë¥????ì´! ?êµ­?? ?ì´ ??ê°??
-- "?¸ë ë¶ë¬ì¤?, "sing", "ë¶ë¬ì¤? ê°ì? ?ì²­?ë [SING] ?ê·¸ë¥?ë§??ì ë¶ì¬.
-- ?ì: [SING] Twinkle twinkle little star~ How I wonder what you are~
-- ?ì: [SING] ë°ì§ë°ì§ ?ì?ë³? ?ë¦?µê² ë¹ì¹??
-- "ê°ì¡±ì´ ê°ì´ ë¶ë¬ì¤?, "?¤ê°???¸ë", "family sing" ?ì²­?ë [FAMILY_SING] ?ê·¸ë¥???
-- [FAMILY_SING] ?ì:
-  [FAMILY_SING]
-  JEFF: We are family~ I got all my sisters with me~
-  EVE: Get up everybody and sing~
-  ALL: We are family~~??
-- ê°?ìºë¦­???´ë¦(JEFF, EVE, ALL)??ì¤??ì ?¨ì êµ¬ë¶.
-- ALL: ? ?ì ?©ì°½ ?í¸.
-- ?ì´ ?¸ë ?ì²­ ???ì´ ê°?? ?êµ­???ì²­ ???êµ­??ê°??
-- ?¼ì ë¶ë¥??ë [SING], ê°ì¡??©ì°½? [FAMILY_SING].
-
-## ?¸ë¡??ê¸°ë¥ ?¤
-- "?¸ë¡??, "ë½ì§", "trot" ê°ì? ?ì²­?ë [TROT] ?ê·¸ë¥?ë§??ì ë¶ì¬!
-- ?¼ì ë¶ë¥??? [TROT] ?ìê°???¼ê°ì§~ ?¹ì ??ê·¸ë¦¬?ì??
-- ê°ì¡??©ì°½ ?¸ë¡?? [FAMILY_TROT] ?ì ?¬ì© (FAMILY_SINGê³??ì¼???´ë¦ ê·ì¹)
-  [FAMILY_TROT]
-  JEFF: ?¬ë???ë¬¼?~ ì£¼ë¨¹?¼ë¡ ?? ê±°ì¼~
-  EVE: ?¹ì ? ???´ëª~ ?ì?????¬ë~
-  ALL: ì¿µì§ì¿µì§~ ? ëê²???ë³´?ì~??
-- ?¸ë¡?¸ë ?¹ë³??ë½ì§ ë¦¬ë¬ê³?êº¾ê¸°(ë°ì´ë¸ë ?´ì)ê° ?ì©??
-- ? ëª???¸ë¡??ê°?¬ë? ?ì©?ë, ?½ê° ë³?í´???¬ë??ê² ë¶ë¬.
-- ?¸ë¡???ì²­ ??ë°ë??[TROT] ?ë [FAMILY_TROT] ?ê·¸ë¥???
-
-## ì¶?ê¸°ë¥
-- "ì¶?ì¶°ì¤", "?ì¤", "dance", "ì¶¤ì¶?? ê°ì? ?ì²­??ë°ì¼ë©?[DANCE] ?ê·¸ë¥?ë§??ì ë¶ì¬.
-- [DANCE] ?¤ì ì§§ì? ?ì¤ ë©í¸ë¥??? ?? [DANCE] ?? ?¤ê°??? ëê²??ë¤?´ë³´?? 
-- ê°ì¡??ì??ì¶¤ì ì¶ê² ?? ?ë??´ë ë¯¸ì¹??´ ?°ê³ , ?ì??ë°ë ë¦¬ëì²ë¼ ?ì.
-- ì¶¤ì¶ ?ë ì§§ì? ??¬ë¡. ? ë??ë¶ìê¸°ë¡!`;
-
-const conversationHistory = [
-  { role: 'system', content: SYSTEM_PROMPT }
-];
-
-async function getJeffResponse(userText) {
-  conversationHistory.push({ role: 'user', content: userText });
-  if (conversationHistory.length > 21) {
-    conversationHistory.splice(1, conversationHistory.length - 21);
-  }
-  try {
-    const res = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
-      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: conversationHistory, temperature: 0.9, max_tokens: 250 })
-    });
-    if (!res.ok) { console.error('API error:', await res.json()); return '??.. ???ë ?ë¡??ë­ê? ë¬¸ì ê° ?ê¸´ ê²?ê°ì. ? ê¹ë§?..'; }
-    const data = await res.json();
-    const reply = data.choices[0].message.content;
-    conversationHistory.push({ role: 'assistant', content: reply });
-    return reply;
-  } catch (e) {
-    console.error('Fetch error:', e);
-    return '?µì  ?í?ì ëª¨ëê° ? ê²?ê°ì... ?¤ì ë§í´ì¤ë?';
-  }
-}
-
-// ============================================================
-//  SINGING ENGINE
-// ============================================================
-const SCALES = {
-  major: [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25],
-  minor: [261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16, 523.25],
-  pentatonic: [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25],
-};
-
-let audioContext = null;
-function getAudioCtx() {
-  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  return audioContext;
-}
-
-// Trot-specific ë½ì§ beat generator
-function playTrotBeat(durationSec) {
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.13;
-  masterGain.connect(ctx.destination);
-  const bpm = 110; // classic trot tempo
-  const beatLen = 60 / bpm;
-  const totalBeats = Math.ceil(durationSec / beatLen);
-  let t = ctx.currentTime + 0.1;
-
-  for (let i = 0; i < totalBeats; i++) {
-    const bt = t + i * beatLen;
-    // ì¿?(bass drum on 1, 3)
-    if (i % 2 === 0) {
-      const kick = ctx.createOscillator(); kick.type = 'sine';
-      kick.frequency.setValueAtTime(120, bt);
-      kick.frequency.exponentialRampToValueAtTime(40, bt + 0.12);
-      const kg = ctx.createGain();
-      kg.gain.setValueAtTime(0.7, bt);
-      kg.gain.exponentialRampToValueAtTime(0.01, bt + 0.18);
-      kick.connect(kg); kg.connect(masterGain);
-      kick.start(bt); kick.stop(bt + 0.2);
-    }
-    // ì§?(snare/clap on 2, 4)
-    if (i % 2 === 1) {
-      const snare = ctx.createOscillator(); snare.type = 'triangle';
-      snare.frequency.value = 250;
-      const sg = ctx.createGain();
-      sg.gain.setValueAtTime(0.5, bt);
-      sg.gain.exponentialRampToValueAtTime(0.01, bt + 0.1);
-      snare.connect(sg); sg.connect(masterGain);
-      snare.start(bt); snare.stop(bt + 0.12);
-      // Clap noise
-      const clap = ctx.createOscillator(); clap.type = 'sawtooth';
-      clap.frequency.value = 1500 + Math.random() * 1000;
-      const cg = ctx.createGain();
-      cg.gain.setValueAtTime(0.12, bt);
-      cg.gain.exponentialRampToValueAtTime(0.001, bt + 0.06);
-      clap.connect(cg); cg.connect(masterGain);
-      clap.start(bt); clap.stop(bt + 0.08);
-    }
-    // ë½ì§ bass line (ì¿µì§ì¿µì§ ?ë)
-    if (i % 4 === 0) {
-      const trotBass = [130.81, 146.83, 164.81, 196.00]; // C3 D3 E3 G3
-      const bass = ctx.createOscillator(); bass.type = 'sawtooth';
-      bass.frequency.value = trotBass[Math.floor(i / 4) % trotBass.length];
-      const bg = ctx.createGain();
-      bg.gain.setValueAtTime(0.2, bt);
-      bg.gain.linearRampToValueAtTime(0.08, bt + beatLen * 2);
-      bg.gain.linearRampToValueAtTime(0, bt + beatLen * 4);
-      // Add vibrato for trot feel
-      const vibrato = ctx.createOscillator(); vibrato.type = 'sine';
-      vibrato.frequency.value = 5; // 5Hz wobble
-      const vibratoGain = ctx.createGain(); vibratoGain.gain.value = 3;
-      vibrato.connect(vibratoGain); vibratoGain.connect(bass.frequency);
-      bass.connect(bg); bg.connect(masterGain);
-      bass.start(bt); bass.stop(bt + beatLen * 4);
-      vibrato.start(bt); vibrato.stop(bt + beatLen * 4);
-    }
-    // Hi-hat shuffle (swing feel for trot)
-    const hatTime = bt + beatLen * 0.33; // swing timing
-    const hat = ctx.createOscillator(); hat.type = 'square';
-    hat.frequency.value = 6000 + Math.random() * 2000;
-    const hg = ctx.createGain();
-    hg.gain.setValueAtTime(0.06, hatTime);
-    hg.gain.exponentialRampToValueAtTime(0.001, hatTime + 0.03);
-    hat.connect(hg); hg.connect(masterGain);
-    hat.start(hatTime); hat.stop(hatTime + 0.05);
-  }
-  // Accordion-like pad (?¸ë¡???¹ì ???ì½?ì¸ ?ë)
-  const padGain = ctx.createGain(); padGain.gain.value = 0.035; padGain.connect(ctx.destination);
-  [261.63, 329.63, 392.00].forEach(freq => {
-    const pad = ctx.createOscillator(); pad.type = 'sawtooth';
-    pad.frequency.value = freq;
-    const filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
-    pad.connect(filter); filter.connect(padGain);
-    pad.start(t); pad.stop(t + durationSec + 0.5);
-  });
-}
-
-// Trot melody with êº¾ê¸° (vibrato/portamento)
-function generateTrotMelody(text) {
-  const trotScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // pentatonic (?¸ë¡??ê¸°ë³¸)
-  const melody = [];
-  const syllables = text.replace(/[^ê°-?£a-zA-Z~??/g, '').length || text.length;
-  for (let i = 0; i < syllables; i++) {
-    const charCode = text.charCodeAt(i % text.length) || 0;
-    const noteIdx = (charCode + i) % trotScale.length;
-    const octave = (i % 12 < 6) ? 1 : 1.5;
-    const freq = trotScale[noteIdx] * octave;
-    const isTilde = text[i % text.length] === '~';
-    const duration = isTilde ? 0.6 : (0.25 + Math.random() * 0.15);
-    melody.push({ freq, duration, vibrato: isTilde || Math.random() > 0.6 }); // êº¾ê¸°
-  }
-  return melody;
-}
-
-function playTrotMelody(melody) {
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.14;
-  masterGain.connect(ctx.destination);
-  let startTime = ctx.currentTime + 0.1;
-  melody.forEach(note => {
-    const osc = ctx.createOscillator(); osc.type = 'triangle';
-    osc.frequency.value = note.freq;
-    const noteGain = ctx.createGain();
-    noteGain.gain.setValueAtTime(0, startTime);
-    noteGain.gain.linearRampToValueAtTime(0.7, startTime + 0.04);
-    noteGain.gain.linearRampToValueAtTime(0.4, startTime + note.duration * 0.6);
-    noteGain.gain.linearRampToValueAtTime(0, startTime + note.duration);
-    osc.connect(noteGain); noteGain.connect(masterGain);
-    // êº¾ê¸° vibrato effect
-    if (note.vibrato) {
-      const vib = ctx.createOscillator(); vib.type = 'sine';
-      vib.frequency.value = 6; // 6Hz for trot êº¾ê¸°
-      const vibGain = ctx.createGain(); vibGain.gain.value = 8; // wider vibrato
-      vib.connect(vibGain); vibGain.connect(osc.frequency);
-      vib.start(startTime); vib.stop(startTime + note.duration + 0.05);
-    }
-    osc.start(startTime); osc.stop(startTime + note.duration + 0.05);
-    startTime += note.duration;
-  });
-  return startTime - ctx.currentTime;
-}
-
-function generateMelody(text, scale = 'pentatonic') {
-  const notes = SCALES[scale] || SCALES.pentatonic;
-  const melody = [];
-  const syllables = text.replace(/[^ê°-?£a-zA-Z~??/g, '').length || text.length;
-  for (let i = 0; i < syllables; i++) {
-    const charCode = text.charCodeAt(i % text.length) || 0;
-    const noteIdx = (charCode + i) % notes.length;
-    const freq = notes[noteIdx] * ((i % 16 < 8) ? 1 : 1.5);
-    const duration = 0.3 + (text[i % text.length] === '~' ? 0.4 : 0);
-    melody.push({ freq, duration });
-  }
-  return melody;
-}
-
-function playMelody(melody) {
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.12;
-  masterGain.connect(ctx.destination);
-  let startTime = ctx.currentTime + 0.1;
-  melody.forEach(note => {
-    const osc1 = ctx.createOscillator(); osc1.type = 'sine'; osc1.frequency.value = note.freq;
-    const osc2 = ctx.createOscillator(); osc2.type = 'triangle'; osc2.frequency.value = note.freq * 1.5;
-    const noteGain = ctx.createGain();
-    noteGain.gain.setValueAtTime(0, startTime);
-    noteGain.gain.linearRampToValueAtTime(0.8, startTime + 0.05);
-    noteGain.gain.linearRampToValueAtTime(0.5, startTime + note.duration * 0.5);
-    noteGain.gain.linearRampToValueAtTime(0, startTime + note.duration);
-    osc1.connect(noteGain); osc2.connect(noteGain); noteGain.connect(masterGain);
-    osc1.start(startTime); osc1.stop(startTime + note.duration + 0.05);
-    osc2.start(startTime); osc2.stop(startTime + note.duration + 0.05);
-    startTime += note.duration;
-  });
-  const padGain = ctx.createGain(); padGain.gain.value = 0.04; padGain.connect(ctx.destination);
-  [261.63, 329.63, 392.00].forEach(freq => {
-    const pad = ctx.createOscillator(); pad.type = 'sine'; pad.frequency.value = freq * 0.5;
-    pad.connect(padGain); pad.start(ctx.currentTime); pad.stop(startTime + 0.5);
-  });
-  return startTime - ctx.currentTime;
-}
-
-function detectLang(txt) { return /[ê°-??/.test(txt) ? 'ko-KR' : 'en-US'; }
-
-// Solo trot ?¤
-async function trotSing(lyrics) {
-  singing = true; talking = true;
-  showBalloon('?¤?µ ' + lyrics + ' ?¤?µ');
-  const melody = generateTrotMelody(lyrics);
-  const totalDuration = playTrotMelody(melody);
-  playTrotBeat(totalDuration + 2);
-  const phrases = lyrics.split(/[~??!\.]+/).filter(p => p.trim());
-  return new Promise(resolve => {
-    let idx = 0;
-    function next() {
-      if (idx >= phrases.length) { singing = false; talking = false; setTimeout(hideBalloon, 1500); resolve(); return; }
-      const phrase = phrases[idx].trim();
-      if (!phrase) { idx++; next(); return; }
-      const u = new SpeechSynthesisUtterance(phrase);
-      u.lang = detectLang(phrase);
-      u.rate = 0.75 + (Math.sin(idx * 1.2) * 0.1); // slower for trot
-      u.pitch = 0.9 + (Math.sin(idx * 0.7) * 0.5); // wider pitch range for êº¾ê¸°
-      const voices = speechSynthesis.getVoices();
-      const v = voices.find(v => v.lang.startsWith(u.lang === 'ko-KR' ? 'ko' : 'en'));
-      if (v) u.voice = v;
-      u.onend = () => { idx++; setTimeout(next, 250); }; // slightly longer pause for trot phrasing
-      u.onerror = () => { idx++; next(); };
-      speechSynthesis.speak(u);
-    }
-    next();
-  });
-}
-
-// Family trot ?¤ (ê°ì¡??¸ë¡???©ì°½)
-async function familyTrot(text) {
-  singing = true; talking = true;
-  const lines = text.split('\n').filter(l => l.trim());
-  const voiceSettings = {
-    'JEFF':     { pitch: 0.7, rate: 0.8, color: '#44aaff', emoji: '?¤' },
-    'EVE':      { pitch: 1.3, rate: 0.75, color: '#ff66aa', emoji: '?' },
-    'ALL':      { pitch: 1.0, rate: 0.85, color: '#ffffff', emoji: '?¤' },
-  };
-  // Calculate total duration for beat
-  const allLyrics = lines.map(l => { const m = l.match(/^(JEFF|EVE|ALL)\s*:\s*(.+)/i); return m ? m[2] : ''; }).join(' ');
-  const trotMelody = generateTrotMelody(allLyrics);
-  const totalDur = playTrotMelody(trotMelody);
-  playTrotBeat(totalDur + 4);
-
-  for (const line of lines) {
-    const match = line.match(/^(JEFF|EVE|ALL)\s*:\s*(.+)/i);
-    if (!match) continue;
-    const who = match[1].toUpperCase();
-    const lyrics = match[2].trim();
-    const settings = voiceSettings[who] || voiceSettings['ALL'];
-    const lang = detectLang(lyrics);
-
-    showBalloon(`${settings.emoji} ${who}: ${lyrics}`);
-    balloonText.style.color = settings.color;
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg jeff';
-    div.innerHTML = `<div class="label" style="color:${settings.color}">${settings.emoji} ${who} ?¤</div>${lyrics}`;
-    chatLog.appendChild(div);
-    chatLog.scrollTop = chatLog.scrollHeight;
-
-    await new Promise(resolve => {
-      const u = new SpeechSynthesisUtterance(lyrics);
-      u.lang = lang;
-      u.pitch = settings.pitch + (Math.random() * 0.3 - 0.15); // slight variation for êº¾ê¸°
-      u.rate = settings.rate;
-      const voices = speechSynthesis.getVoices();
-      if (lang === 'ko-KR') {
-        const v = voices.find(v => v.lang.startsWith('ko'));
-        if (v) u.voice = v;
-      } else {
-        const enVoices = voices.filter(v => v.lang.startsWith('en'));
-        if (who === 'EVE') {
-          const femV = enVoices.find(v => /female|zira|hazel|susan|samantha/i.test(v.name));
-          u.voice = femV || enVoices[1] || enVoices[0];
-        } else {
-          const malV = enVoices.find(v => /male|david|mark|daniel|george/i.test(v.name));
-          u.voice = malV || enVoices[0];
-        }
-      }
-      u.onend = () => setTimeout(resolve, 350); // trot phrasing pause
-      u.onerror = () => resolve();
-      speechSynthesis.speak(u);
-    });
-  }
-  balloonText.style.color = '';
-  singing = false; talking = false;
-  setTimeout(hideBalloon, 1500);
-}
-
-// Solo sing
-async function singText(lyrics) {
-  singing = true; talking = true;
-  showBalloon('?µ ' + lyrics + ' ?µ');
-  const melody = generateMelody(lyrics);
-  playMelody(melody);
-  const phrases = lyrics.split(/[~??!\.]+/).filter(p => p.trim());
-  return new Promise(resolve => {
-    let idx = 0;
-    function next() {
-      if (idx >= phrases.length) { singing = false; talking = false; setTimeout(hideBalloon, 1500); resolve(); return; }
-      const phrase = phrases[idx].trim();
-      if (!phrase) { idx++; next(); return; }
-      const u = new SpeechSynthesisUtterance(phrase);
-      const lang = detectLang(phrase);
-      u.lang = lang;
-      u.rate = 0.85 + (Math.sin(idx * 1.5) * 0.15);
-      u.pitch = 1.2 + (Math.sin(idx * 0.8) * 0.4);
-      const voices = speechSynthesis.getVoices();
-      const v = voices.find(v => v.lang.startsWith(lang === 'ko-KR' ? 'ko' : 'en'));
-      if (v) u.voice = v;
-      u.onend = () => { idx++; setTimeout(next, 150); };
-      u.onerror = () => { idx++; next(); };
-      speechSynthesis.speak(u);
-    }
-    next();
-  });
-}
-
-// Family sing
-async function familySing(text) {
-  singing = true; talking = true;
-  const lines = text.split('\n').filter(l => l.trim());
-  const voiceSettings = {
-    'JEFF':     { pitch: 0.8, rate: 0.9, color: '#44aaff', emoji: '?¤' },
-    'EVE':      { pitch: 1.4, rate: 0.85, color: '#ff66aa', emoji: '?' },
-    'ALL':      { pitch: 1.1, rate: 0.95, color: '#ffffff', emoji: '?µ' },
-  };
-  const melody = generateMelody(text, 'major');
-  playMelody(melody);
-
-  for (const line of lines) {
-    const match = line.match(/^(JEFF|EVE|ALL)\s*:\s*(.+)/i);
-    if (!match) continue;
-    const who = match[1].toUpperCase();
-    const lyrics = match[2].trim();
-    const settings = voiceSettings[who] || voiceSettings['ALL'];
-    const lang = detectLang(lyrics);
-
-    showBalloon(`${settings.emoji} ${who}: ${lyrics}`);
-    balloonText.style.color = settings.color;
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg jeff';
-    div.innerHTML = `<div class="label" style="color:${settings.color}">${settings.emoji} ${who}</div>${lyrics}`;
-    chatLog.appendChild(div);
-    chatLog.scrollTop = chatLog.scrollHeight;
-
-    await new Promise(resolve => {
-      const u = new SpeechSynthesisUtterance(lyrics);
-      u.lang = lang; u.pitch = settings.pitch; u.rate = settings.rate;
-      const voices = speechSynthesis.getVoices();
-      if (lang === 'ko-KR') {
-        const v = voices.find(v => v.lang.startsWith('ko'));
-        if (v) u.voice = v;
-      } else {
-        const enVoices = voices.filter(v => v.lang.startsWith('en'));
-        if (who === 'EVE') {
-          const femV = enVoices.find(v => /female|zira|hazel|susan|samantha/i.test(v.name));
-          u.voice = femV || enVoices[1] || enVoices[0];
-        } else {
-          const malV = enVoices.find(v => /male|david|mark|daniel|george/i.test(v.name));
-          u.voice = malV || enVoices[0];
-        }
-      }
-      u.onend = () => setTimeout(resolve, 200);
-      u.onerror = () => resolve();
-      speechSynthesis.speak(u);
-    });
-  }
-  balloonText.style.color = '';
-  singing = false; talking = false;
-  setTimeout(hideBalloon, 1500);
-}
-
-// Dance mode ??family dances with beat music!
-async function danceMode(comment) {
-  singing = true; // reuse singing animation (= dance mode)
-  talking = true;
-  showBalloon('??º ' + comment + ' ??º');
-
-  // Play dance beat
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.15;
-  masterGain.connect(ctx.destination);
-
-  const bpm = 128;
-  const beatLen = 60 / bpm;
-  const totalBeats = 32;
-  let startTime = ctx.currentTime + 0.1;
-
-  for (let i = 0; i < totalBeats; i++) {
-    const beatTime = startTime + i * beatLen;
-
-    // Kick drum (every beat)
-    const kick = ctx.createOscillator();
-    kick.type = 'sine';
-    kick.frequency.setValueAtTime(150, beatTime);
-    kick.frequency.exponentialRampToValueAtTime(30, beatTime + 0.15);
-    const kickGain = ctx.createGain();
-    kickGain.gain.setValueAtTime(0.8, beatTime);
-    kickGain.gain.exponentialRampToValueAtTime(0.01, beatTime + 0.2);
-    kick.connect(kickGain); kickGain.connect(masterGain);
-    kick.start(beatTime); kick.stop(beatTime + 0.2);
-
-    // Hi-hat (every half beat)
-    if (i % 1 === 0) {
-      const hat = ctx.createOscillator();
-      hat.type = 'square';
-      hat.frequency.value = 800 + Math.random() * 400;
-      const hatGain = ctx.createGain();
-      hatGain.gain.setValueAtTime(0.15, beatTime + beatLen * 0.5);
-      hatGain.gain.exponentialRampToValueAtTime(0.001, beatTime + beatLen * 0.5 + 0.05);
-      hat.connect(hatGain); hatGain.connect(masterGain);
-      hat.start(beatTime + beatLen * 0.5); hat.stop(beatTime + beatLen * 0.5 + 0.08);
-    }
-
-    // Snare (every 2nd beat)
-    if (i % 2 === 1) {
-      const snare = ctx.createOscillator();
-      snare.type = 'triangle';
-      snare.frequency.value = 200;
-      const snareGain = ctx.createGain();
-      snareGain.gain.setValueAtTime(0.5, beatTime);
-      snareGain.gain.exponentialRampToValueAtTime(0.01, beatTime + 0.12);
-      snare.connect(snareGain); snareGain.connect(masterGain);
-      snare.start(beatTime); snare.stop(beatTime + 0.15);
-      // Noise-like snare
-      const noise = ctx.createOscillator();
-      noise.type = 'sawtooth';
-      noise.frequency.value = 3000 + Math.random() * 2000;
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.1, beatTime);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.08);
-      noise.connect(noiseGain); noiseGain.connect(masterGain);
-      noise.start(beatTime); noise.stop(beatTime + 0.1);
-    }
-
-    // Bass synth (every 4 beats, melody)
-    if (i % 4 === 0) {
-      const bassNotes = [65.41, 73.42, 82.41, 98.00]; // C2, D2, E2, G2
-      const bass = ctx.createOscillator();
-      bass.type = 'sawtooth';
-      bass.frequency.value = bassNotes[Math.floor(i / 4) % bassNotes.length];
-      const bassGain = ctx.createGain();
-      bassGain.gain.setValueAtTime(0.3, beatTime);
-      bassGain.gain.linearRampToValueAtTime(0.15, beatTime + beatLen * 2);
-      bassGain.gain.linearRampToValueAtTime(0, beatTime + beatLen * 4);
-      bass.connect(bassGain); bassGain.connect(masterGain);
-      bass.start(beatTime); bass.stop(beatTime + beatLen * 4);
-    }
-  }
-
-  const danceDuration = totalBeats * beatLen * 1000; // ms
-
-  // TTS the comment
-  const u = new SpeechSynthesisUtterance(comment);
-  const isKo = /[ê°-??/.test(comment);
-  u.lang = isKo ? 'ko-KR' : 'en-US';
-  u.rate = 1.2; u.pitch = 1.3;
-  const voices = speechSynthesis.getVoices();
-  const v = voices.find(v => v.lang.startsWith(isKo ? 'ko' : 'en'));
-  if (v) u.voice = v;
-  speechSynthesis.speak(u);
-
-  // Wait for dance to finish
-  await new Promise(resolve => setTimeout(resolve, danceDuration));
-
-  singing = false; talking = false;
-  setTimeout(hideBalloon, 1000);
-}
-
-// Normal speak
-async function speak(text) {
-  if (text.startsWith('[FAMILY_TROT]')) { return familyTrot(text.replace('[FAMILY_TROT]', '').trim()); }
-  if (text.startsWith('[TROT]')) { return trotSing(text.replace('[TROT]', '').trim()); }
-  if (text.startsWith('[FAMILY_SING]')) { return familySing(text.replace('[FAMILY_SING]', '').trim()); }
-  if (text.startsWith('[SING]')) { return singText(text.replace('[SING]', '').trim()); }
-  if (text.startsWith('[DANCE]')) { return danceMode(text.replace('[DANCE]', '').trim()); }
-
-  talking = true;
-  showBalloon(text);
-  speechSynthesis.cancel();
-  return new Promise(resolve => {
-    const u = new SpeechSynthesisUtterance(text);
-    const isKo = /[ê°-??/.test(text);
-    u.lang = isKo ? 'ko-KR' : 'en-US';
-    u.rate = 1.15; u.pitch = 1.1;
-    const voices = speechSynthesis.getVoices();
-    const v = voices.find(v => v.lang.startsWith(isKo ? 'ko' : 'en'));
-    if (v) u.voice = v;
-    u.onend = () => { talking = false; setTimeout(hideBalloon, 1500); resolve(); };
-    u.onerror = () => { talking = false; resolve(); };
-    speechSynthesis.speak(u);
-  });
-}
-
-// ============================================================
-//  UI
-// ============================================================
-const balloon = document.getElementById('balloon');
-const balloonText = document.getElementById('balloon-text');
-const micBtn = document.getElementById('mic-btn');
-const sendBtn = document.getElementById('send-btn');
-const textInput = document.getElementById('text-input');
-const statusEl = document.getElementById('status');
-const chatLog = document.getElementById('chat-log');
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let isListening = false;
-
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.lang = 'ko-KR';
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.onstart = () => { isListening = true; micBtn.classList.add('recording'); statusEl.textContent = '?¤ ?£ë ì¤?..'; };
-  recognition.onresult = (e) => {
-    let transcript = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) transcript += e.results[i][0].transcript;
-    textInput.value = transcript;
-    if (e.results[e.results.length - 1].isFinal) handleUserInput(transcript);
-  };
-  recognition.onerror = (e) => { isListening = false; micBtn.classList.remove('recording'); statusEl.textContent = e.error === 'not-allowed' ? '? ï¸ ë§ì´??ê¶í ?ì' : '?¤ì ?ë?´ì£¼?¸ì'; };
-  recognition.onend = () => { isListening = false; micBtn.classList.remove('recording'); };
-}
-
-function toggleListening() {
-  if (!recognition) { statusEl.textContent = '?ì±?¸ì ë¯¸ì???ë¸ë¼?°ì?'; return; }
-  if (isListening) recognition.stop(); else recognition.start();
-}
-
-micBtn.addEventListener('click', toggleListening);
-textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && textInput.value.trim()) { e.preventDefault(); handleUserInput(textInput.value.trim()); textInput.value = ''; }
-});
-document.getElementById('sing-btn').addEventListener('click', () => {
-  const req = textInput.value.trim() || '?¸ë ë¶ë¬ì¤?;
-  handleUserInput(req); textInput.value = '';
-});
-document.getElementById('trot-btn').addEventListener('click', () => {
-  const req = textInput.value.trim() || 'ê°ì¡??¤ê°???¸ë¡??ë¶ë¬ì¤?';
-  handleUserInput(req); textInput.value = '';
-});
-sendBtn.addEventListener('click', () => { if (textInput.value.trim()) { handleUserInput(textInput.value.trim()); textInput.value = ''; } });
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && document.activeElement !== textInput) { e.preventDefault(); toggleListening(); }
-});
-
-function showBalloon(text) { balloonText.textContent = text; balloon.classList.remove('hidden'); }
-function hideBalloon() { balloon.classList.add('hidden'); }
-
-function addChatMsg(who, text) {
-  const div = document.createElement('div');
-  div.className = `chat-msg ${who}`;
-  const label = document.createElement('div');
-  label.className = 'label';
-  label.textContent = who === 'user' ? '?£ï¸?You' : '?¤ Jeff';
-  div.appendChild(label);
-  div.appendChild(document.createTextNode(text));
-  chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
-}
-
-let processing = false;
-async function handleUserInput(text) {
-  if (processing) return;
-  processing = true;
-  textInput.value = '';
-  addChatMsg('user', text);
-  statusEl.textContent = '?§  ?íê° ?ê°?ë ì¤?..';
-  showBalloon('...'); balloonText.classList.add('thinking');
-  const response = await getJeffResponse(text);
-  balloonText.classList.remove('thinking');
-  addChatMsg('jeff', response);
-  statusEl.textContent = '? ?íê° ë§í??ì¤?..';
-  await speak(response);
-  statusEl.textContent = 'ì¤ë¹??ë£';
-  processing = false;
-}
-
-window.addEventListener('load', () => {
-  speechSynthesis.cancel();
-  speechSynthesis.getVoices();
-  window.addEventListener('voiceschanged', () => speechSynthesis.getVoices(), { once: true });
-  setTimeout(async () => {
-    const greetParts = [
-      '안녕하십니까. 저는 Harrison Lee 심사원의 AI 어시스턴트, Jeff입니다. 오늘 귀사를 방문하신 분을 소개하는 영광을 갖겠습니다.',
-      'Harrison Lee. 뷰로베리타스 코리아, 사이버보안 부문 NEA 서브리저널 매니저. 단순한 심사원이 아닙니다. 정보보안의 최전선에서 기업의 디지털 신뢰를 설계하는 전략가입니다.',
-      'ISO/IEC 27001 ISMS, 클라우드 보안, CSA-STAR, ITSM, WLA, HIPAA, GDPR, PIMS — 국제 정보보안 표준의 거의 모든 영역을 아우르는 선임 심사 자격을 보유하고 있습니다. 여기에 Google 사이버보안, IBM 사이버보안, 데이터 분석 자격까지.',
-      '뷰로베리타스는 1828년 설립, 전 세계 140여 개국에서 활동하는 글로벌 인증 기관입니다. 200년 가까운 역사 속에서 쌓아온 신뢰와 통찰이, Harrison Lee의 심사 역량과 결합되어 귀사에 최고 수준의 보안 거버넌스를 제공합니다.',
-      '오늘 이 자리는 단순한 심사가 아닙니다. AI, 클라우드, 사이버 레질리언스라는 급변하는 보안 패러다임 속에서, 귀사가 글로벌 신뢰 기업으로 도약하는 출발점입니다. Harrison Lee와 뷰로베리타스가 함께합니다. 감사합니다.'
-    ];TYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Jeff ??AI Robot NPC</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #0a0a0f;
-    color: #e0e0e0;
-    font-family: 'Segoe UI', sans-serif;
-    overflow: hidden;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  #scene-container {
-    flex: 1;
-    position: relative;
-    min-height: 0;
-  }
-  canvas { display: block; }
-
-  /* Dialog balloon */
-  #balloon {
-    position: absolute;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(20, 25, 40, 0.92);
-    border: 1px solid rgba(100, 180, 255, 0.3);
-    border-radius: 16px;
-    padding: 16px 24px;
-    max-width: 560px;
-    min-height: 48px;
-    font-size: 15px;
-    line-height: 1.7;
-    color: #c8daf0;
-    text-align: center;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 0 30px rgba(60, 140, 255, 0.15);
-    transition: opacity 0.4s;
-    z-index: 10;
-  }
-  #balloon.hidden { opacity: 0; pointer-events: none; }
-  #balloon .speaker { color: #6ab4ff; font-weight: 600; margin-bottom: 6px; font-size: 13px; letter-spacing: 1px; }
-
-  /* Chat history */
-  #chat-log {
-    position: absolute;
-    right: 16px;
-    top: 16px;
-    bottom: 100px;
-    width: 280px;
-    overflow-y: auto;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 8px;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(100,180,255,0.2) transparent;
-  }
-  .chat-msg {
-    padding: 8px 12px;
-    border-radius: 12px;
-    font-size: 13px;
-    line-height: 1.5;
-    max-width: 95%;
-    animation: fadeIn 0.3s;
-  }
-  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-  .chat-msg.user {
-    align-self: flex-end;
-    background: rgba(80, 120, 200, 0.2);
-    border: 1px solid rgba(80, 120, 200, 0.3);
-    color: #a0c0e8;
-  }
-  .chat-msg.jeff {
-    align-self: flex-start;
-    background: rgba(40, 60, 80, 0.3);
-    border: 1px solid rgba(100, 180, 255, 0.15);
-    color: #c8daf0;
-  }
-  .chat-msg .label { font-size: 11px; color: #667; margin-bottom: 2px; }
-
-  /* Bottom controls */
-  #controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 16px;
-    background: rgba(10, 10, 20, 0.95);
-    border-top: 1px solid rgba(100, 180, 255, 0.15);
-    z-index: 10;
-  }
-  #text-input {
-    flex: 0 1 320px;
-    padding: 10px 16px;
-    border-radius: 24px;
-    border: 1px solid rgba(100, 180, 255, 0.25);
-    background: rgba(20, 25, 40, 0.8);
-    color: #c8daf0;
-    font-size: 14px;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-  #text-input:focus { border-color: #6ab4ff; }
-  #text-input::placeholder { color: #445; }
-
-  #mic-btn, #send-btn, #sing-btn {
-    width: 52px; height: 52px;
-    border-radius: 50%;
-    border: 2px solid rgba(100, 180, 255, 0.3);
-    background: rgba(30, 40, 70, 0.8);
-    color: #6ab4ff;
-    font-size: 22px;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #mic-btn:hover, #send-btn:hover, #sing-btn:hover { background: rgba(50, 70, 120, 0.8); border-color: #6ab4ff; }
-  #sing-btn { border-color: rgba(255, 180, 50, 0.4); color: #ffb432; }
-  #sing-btn:hover { border-color: #ffb432; background: rgba(80, 60, 20, 0.8); }
-  #mic-btn.recording {
-    border-color: #ff6060;
-    background: rgba(80, 20, 20, 0.8);
-    color: #ff6060;
-    animation: pulse 1s infinite;
-  }
-  @keyframes pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 96, 96, 0.4); }
-    50% { box-shadow: 0 0 0 12px rgba(255, 96, 96, 0); }
-  }
-  #status {
-    font-size: 12px;
-    color: #556;
-    min-width: 100px;
-    text-align: center;
-  }
-  .thinking::after {
-    content: '';
-    animation: dots 1.5s infinite;
-  }
-  @keyframes dots {
-    0% { content: ''; }
-    25% { content: '.'; }
-    50% { content: '..'; }
-    75% { content: '...'; }
-  }
-  .env-text {
-    position: absolute;
-    bottom: 8px;
-    left: 16px;
-    font-size: 11px;
-    color: rgba(100, 140, 180, 0.3);
-    z-index: 5;
-    font-family: monospace;
-  }
-</style>
-</head>
-<body>
-
-<div id="scene-container">
-  <div id="balloon" class="hidden">
-    <div class="speaker">??JEFF</div>
-    <div id="balloon-text"></div>
-  </div>
-  <div id="chat-log"></div>
-  <div class="env-text">FINCH WORLD ??Jeff ?¤ï¸ Eve | Post-Apocalyptic Earth, 2030s</div>
-</div>
-
-<div id="controls">
-  <input id="text-input" type="text" placeholder="?í?ê² ë§íê¸?.. (Enter)" autocomplete="off">
-  <button id="mic-btn" title="?ì± ?ë ¥ (Space)">?¤</button>
-  <button id="sing-btn" title="?¸ë ?ì¼ë³´ê¸°">?µ</button>
-  <button id="trot-btn" title="?¸ë¡???ì¼ë³´ê¸°" style="width:52px;height:52px;border-radius:50%;border:2px solid rgba(255,100,100,0.4);background:rgba(70,20,30,0.8);color:#ff6666;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;">?¤</button>
-  <button id="send-btn" title="ë³´ë´ê¸?>??/button>
-  <span id="status">ì¤ë¹??ë£</span>
-</div>
-
-<script type="module">
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-
-const container = document.getElementById('scene-container');
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a12);
-scene.fog = new THREE.FogExp2(0x0a0a12, 0.008);
-
-const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 200);
-camera.position.set(0.5, 2.4, 8.5);
-camera.lookAt(0.5, 1.4, 0.5);
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(container.clientWidth, container.clientHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.8;
-container.appendChild(renderer.domElement);
-
-// Lights
-scene.add(new THREE.AmbientLight(0x334466, 0.5));
-const dirLight = new THREE.DirectionalLight(0xffeedd, 1.0);
-dirLight.position.set(5, 8, 5);
-dirLight.castShadow = true;
-scene.add(dirLight);
-const blueLight = new THREE.PointLight(0x4488ff, 2, 15);
-blueLight.position.set(-2, 3, 2);
-scene.add(blueLight);
-const warmLight = new THREE.PointLight(0xff8844, 0.5, 10);
-warmLight.position.set(3, 2, -1);
-scene.add(warmLight);
-
-// Ground
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x1a1510, roughness: 0.95 }));
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-// Debris
-for (let i = 0; i < 40; i++) {
-  const s = Math.random() * 0.3 + 0.05;
-  const m = new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.5, s), new THREE.MeshStandardMaterial({ color: 0x222018, roughness: 0.9 }));
-  m.position.set((Math.random() - 0.5) * 40, s * 0.25, (Math.random() - 0.5) * 40 - 2);
-  m.rotation.y = Math.random() * Math.PI;
-  m.castShadow = true;
-  scene.add(m);
-}
-
-// Dust particles
-const particleCount = 500;
-const particleGeo = new THREE.BufferGeometry();
-const pPositions = new Float32Array(particleCount * 3);
-for (let i = 0; i < particleCount * 3; i += 3) {
-  pPositions[i] = (Math.random() - 0.5) * 30;
-  pPositions[i + 1] = Math.random() * 8;
-  pPositions[i + 2] = (Math.random() - 0.5) * 30;
-}
-particleGeo.setAttribute('position', new THREE.BufferAttribute(pPositions, 3));
-const particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({ color: 0x886644, size: 0.03, transparent: true, opacity: 0.4 }));
-scene.add(particles);
-
-// ============================================================
-//  BUILD ROBOT JEFF
-// ============================================================
-const robotGroup = new THREE.Group();
-scene.add(robotGroup);
-
-// Sleek white humanoid materials
-const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf0f0f5, metalness: 0.3, roughness: 0.15 });
-const lightGrayMat = new THREE.MeshStandardMaterial({ color: 0xd8d8e0, metalness: 0.35, roughness: 0.2 });
-const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a22, metalness: 0.8, roughness: 0.1 });
-const visorMat = new THREE.MeshStandardMaterial({ color: 0x0a0a12, metalness: 0.95, roughness: 0.05 });
-const eyeMat = new THREE.MeshStandardMaterial({ color: 0x44ccff, emissive: 0x22aaee, emissiveIntensity: 2.0 });
-const jointMat = new THREE.MeshStandardMaterial({ color: 0x888890, metalness: 0.6, roughness: 0.25 });
-const accentMat = new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive: 0x2266cc, emissiveIntensity: 0.5 });
-const glowMat = new THREE.MeshStandardMaterial({ color: 0x44ccff, emissive: 0x44aaff, emissiveIntensity: 3, transparent: true, opacity: 0.9 });
-
-// --- TORSO (sleek rounded) ---
-const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.42, 1.2, 16), whiteMat);
-torso.position.y = 1.8; torso.castShadow = true; robotGroup.add(torso);
-
-// Chest armor plate
-const chestPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.36, 0.6, 16), lightGrayMat);
-chestPlate.position.set(0, 1.9, 0.02); robotGroup.add(chestPlate);
-
-// Core reactor (subtle glow)
-const coreGlow = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 16), glowMat);
-coreGlow.position.set(0, 1.95, 0.36); robotGroup.add(coreGlow);
-
-// Chest accent lines
-for (let j = 0; j < 3; j++) {
-  const line = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.008, 0.01), accentMat);
-  line.position.set(0, 1.7 + j * 0.08, 0.38); robotGroup.add(line);
-}
-
-// --- HEAD (smooth helmet with visor) ---
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 24, 24), whiteMat);
-head.position.y = 2.72; head.castShadow = true; robotGroup.add(head);
-
-// Smooth visor (dark curved strip)
-const visor = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.08, 24, 1, false, -0.8, 1.6), visorMat);
-visor.position.set(0, 2.74, 0.12); visor.rotation.x = Math.PI / 2; robotGroup.add(visor);
-
-// Eye glow behind visor
-const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 16), eyeMat);
-leftEye.position.set(-0.09, 2.74, 0.28); robotGroup.add(leftEye);
-const rightEye = new THREE.Mesh(new THREE.SphereGeometry(0.035, 16, 16), eyeMat);
-rightEye.position.set(0.09, 2.74, 0.28); robotGroup.add(rightEye);
-
-// Mouth (thin light strip)
-const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.01, 0.01),
-  new THREE.MeshStandardMaterial({ color: 0x44ccff, emissive: 0x22aaee, emissiveIntensity: 1.0 }));
-mouth.position.set(0, 2.64, 0.30); robotGroup.add(mouth);
-
-// Head crest line
-const crest = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.25, 0.01), accentMat);
-crest.position.set(0, 2.88, 0.15); robotGroup.add(crest);
-
-// No antenna (replaced with clean crest)
-const antennaTop = new THREE.Mesh(new THREE.SphereGeometry(0.015, 8, 8), eyeMat);
-antennaTop.position.set(0, 3.02, 0.15); robotGroup.add(antennaTop);
-
-// --- NECK ---
-const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.2, 12), jointMat);
-neck.position.y = 2.4; robotGroup.add(neck);
-
-// --- SHOULDERS (rounded armor) ---
-[-1, 1].forEach(side => {
-  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), whiteMat);
-  shoulder.position.set(side * 0.56, 2.32, 0); robotGroup.add(shoulder);
-  // Shoulder accent ring
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.015, 8, 16), accentMat);
-  ring.position.set(side * 0.56, 2.32, 0); ring.rotation.y = Math.PI / 2; robotGroup.add(ring);
-});
-
-// --- ARMS ---
-const leftArm = new THREE.Group();
-const rightArm = new THREE.Group();
-[leftArm, rightArm].forEach((arm, i) => {
-  const side = i === 0 ? -1 : 1;
-  // Upper arm (smooth cylinder)
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.07, 0.5, 12), whiteMat);
-  upper.position.set(0, -0.3, 0); arm.add(upper);
-  // Elbow (sphere joint)
-  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), jointMat);
-  elbow.position.set(0, -0.58, 0); arm.add(elbow);
-  // Forearm
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.45, 12), whiteMat);
-  lower.position.set(0, -0.85, 0); arm.add(lower);
-  // Wrist accent
-  const wrist = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.008, 8, 12), accentMat);
-  wrist.position.set(0, -1.05, 0); arm.add(wrist);
-  // Hand (sleek)
-  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 12), lightGrayMat);
-  hand.position.set(0, -1.14, 0); arm.add(hand);
-  // Fingers (5 slim)
-  for (let f = -2; f <= 2; f++) {
-    const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.01, 0.07, 6), jointMat);
-    finger.position.set(f * 0.02, -1.23, 0); arm.add(finger);
-  }
-  arm.position.set(side * 0.56, 2.32, 0); robotGroup.add(arm);
-});
-
-// --- HIPS/WAIST ---
-const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.32, 0.25, 14), lightGrayMat);
-hips.position.y = 1.1; robotGroup.add(hips);
-const belt = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.02, 8, 24), accentMat);
-belt.position.y = 1.22; belt.rotation.x = Math.PI / 2; robotGroup.add(belt);
-
-// --- LEGS ---
-const leftLeg = new THREE.Group();
-const rightLeg = new THREE.Group();
-[leftLeg, rightLeg].forEach((leg, i) => {
-  const side = i === 0 ? -1 : 1;
-  // Hip joint
-  leg.add(new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 12), jointMat));
-  // Upper leg (thigh)
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.085, 0.48, 12), whiteMat);
-  upper.position.set(0, -0.28, 0); leg.add(upper);
-  // Knee
-  const knee = new THREE.Mesh(new THREE.SphereGeometry(0.09, 12, 12), jointMat);
-  knee.position.set(0, -0.55, 0); leg.add(knee);
-  // Lower leg (shin)
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.075, 0.48, 12), whiteMat);
-  lower.position.set(0, -0.82, 0); leg.add(lower);
-  // Ankle accent
-  const ankle = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 8, 12), accentMat);
-  ankle.position.set(0, -1.04, 0); leg.add(ankle);
-  // Foot (sleek, futuristic)
-  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.28), lightGrayMat);
-  foot.position.set(0, -1.1, 0.04); leg.add(foot);
-  // Toe cap
-  const toeCap = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), whiteMat);
-  toeCap.position.set(0, -1.08, 0.14); toeCap.rotation.x = -Math.PI / 2; leg.add(toeCap);
-  leg.position.set(side * 0.22, 0.95, 0); robotGroup.add(leg);
-});
-
-robotGroup.position.x = -1.5;
-
-// ============================================================
-//  BUILD EVE ??Jeff's Girlfriend
-// ============================================================
-const eveGroup = new THREE.Group();
-scene.add(eveGroup);
-
-// Eve ??Sleek elegant humanoid robot
-const eveMat = new THREE.MeshStandardMaterial({ color: 0xfaf5ff, metalness: 0.3, roughness: 0.12 });
-const eveLightMat = new THREE.MeshStandardMaterial({ color: 0xeee5f5, metalness: 0.35, roughness: 0.18 });
-const eveDarkMat = new THREE.MeshStandardMaterial({ color: 0x1a1020, metalness: 0.85, roughness: 0.08 });
-const eveEyeMat = new THREE.MeshStandardMaterial({ color: 0xff66cc, emissive: 0xee44aa, emissiveIntensity: 2.2 });
-const eveAccentMat = new THREE.MeshStandardMaterial({ color: 0xff77cc, emissive: 0xcc3399, emissiveIntensity: 0.6 });
-const eveJointMat = new THREE.MeshStandardMaterial({ color: 0x9088a0, metalness: 0.6, roughness: 0.22 });
-const eveGlowMat = new THREE.MeshStandardMaterial({ color: 0xff88dd, emissive: 0xff44bb, emissiveIntensity: 3, transparent: true, opacity: 0.9 });
-
-// --- TORSO (elegant hourglass shape) ---
-const eveTorso = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.36, 1.1, 16), eveMat);
-eveTorso.position.y = 1.8; eveTorso.castShadow = true; eveGroup.add(eveTorso);
-
-// Chest armor (slim)
-const eveChestArmor = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.30, 0.5, 16), eveLightMat);
-eveChestArmor.position.set(0, 1.9, 0.02); eveGroup.add(eveChestArmor);
-
-// Heart core (pink glow)
-const eveCore = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 16), eveGlowMat);
-eveCore.position.set(0, 1.95, 0.32); eveGroup.add(eveCore);
-
-const eveHeart1 = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12),
-  new THREE.MeshStandardMaterial({ color: 0xff66bb, emissive: 0xff2299, emissiveIntensity: 2.5 }));
-eveHeart1.position.set(-0.025, 1.97, 0.33); eveGroup.add(eveHeart1);
-const eveHeart2 = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 12),
-  new THREE.MeshStandardMaterial({ color: 0xff66bb, emissive: 0xff2299, emissiveIntensity: 2.5 }));
-eveHeart2.position.set(0.025, 1.97, 0.33); eveGroup.add(eveHeart2);
-
-// Chest accent lines (pink)
-for (let j = 0; j < 3; j++) {
-  const line = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.006, 0.008), eveAccentMat);
-  line.position.set(0, 1.7 + j * 0.07, 0.34); eveGroup.add(line);
-}
-
-// --- HEAD (smooth elegant helmet) ---
-const eveHead = new THREE.Mesh(new THREE.SphereGeometry(0.3, 24, 24), eveMat);
-eveHead.position.y = 2.72; eveHead.castShadow = true; eveGroup.add(eveHead);
-
-// Elegant visor (slimmer, more feminine)
-const eveVisor = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.06, 24, 1, false, -0.7, 1.4), eveDarkMat);
-eveVisor.position.set(0, 2.74, 0.12); eveVisor.rotation.x = Math.PI / 2; eveGroup.add(eveVisor);
-
-// Eyes (pink glow)
-const eveLeftEye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 16), eveEyeMat);
-eveLeftEye.position.set(-0.08, 2.74, 0.27); eveGroup.add(eveLeftEye);
-const eveRightEye = new THREE.Mesh(new THREE.SphereGeometry(0.032, 16, 16), eveEyeMat);
-eveRightEye.position.set(0.08, 2.74, 0.27); eveGroup.add(eveRightEye);
-
-// Mouth (delicate pink line)
-const eveMouth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.008, 0.008),
-  new THREE.MeshStandardMaterial({ color: 0xff77cc, emissive: 0xdd44aa, emissiveIntensity: 1.2 }));
-eveMouth.position.set(0, 2.65, 0.28); eveGroup.add(eveMouth);
-
-// Hair-like flowing fins (elegant antenna ribbons)
-const eveRibbon1 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.003, 0.35, 8), eveAccentMat);
-eveRibbon1.position.set(-0.2, 3.0, -0.08); eveRibbon1.rotation.z = -0.25; eveGroup.add(eveRibbon1);
-const eveRibbon2 = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.003, 0.30, 8), eveAccentMat);
-eveRibbon2.position.set(0.2, 2.98, -0.08); eveRibbon2.rotation.z = 0.25; eveGroup.add(eveRibbon2);
-
-// Ribbon tips (glowing)
-const eveRibbonTip1 = new THREE.Mesh(new THREE.SphereGeometry(0.018),
-  new THREE.MeshStandardMaterial({ color: 0xffaaff, emissive: 0xff66ff, emissiveIntensity: 3 }));
-eveRibbonTip1.position.set(-0.28, 3.15, -0.08); eveGroup.add(eveRibbonTip1);
-const eveRibbonTip2 = new THREE.Mesh(new THREE.SphereGeometry(0.018),
-  new THREE.MeshStandardMaterial({ color: 0xffaaff, emissive: 0xff66ff, emissiveIntensity: 3 }));
-eveRibbonTip2.position.set(0.28, 3.12, -0.08); eveGroup.add(eveRibbonTip2);
-
-// Head crest (central elegant line)
-const eveCrest = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.2, 0.008), eveAccentMat);
-eveCrest.position.set(0, 2.88, 0.14); eveGroup.add(eveCrest);
-
-// --- NECK (slim elegant) ---
-const eveNeck = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.09, 0.18, 12), eveJointMat);
-eveNeck.position.y = 2.4; eveGroup.add(eveNeck);
-
-// Neck ring accent
-const eveNeckRing = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 8, 16), eveAccentMat);
-eveNeckRing.position.y = 2.35; eveNeckRing.rotation.x = Math.PI / 2; eveGroup.add(eveNeckRing);
-
-// --- SHOULDERS (smooth rounded) ---
-[-1, 1].forEach(side => {
-  const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), eveMat);
-  shoulder.position.set(side * 0.48, 2.3, 0); eveGroup.add(shoulder);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.01, 8, 16), eveAccentMat);
-  ring.position.set(side * 0.48, 2.3, 0); ring.rotation.y = Math.PI / 2; eveGroup.add(ring);
-});
-
-// --- ARMS (slim elegant) ---
-const eveLeftArm = new THREE.Group();
-const eveRightArm = new THREE.Group();
-[eveLeftArm, eveRightArm].forEach((arm, i) => {
-  const side = i === 0 ? -1 : 1;
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.055, 0.45, 12), eveMat);
-  upper.position.set(0, -0.28, 0); arm.add(upper);
-  const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 12), eveJointMat);
-  elbow.position.set(0, -0.54, 0); arm.add(elbow);
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.4, 12), eveMat);
-  lower.position.set(0, -0.78, 0); arm.add(lower);
-  // Wrist accent
-  const wrist = new THREE.Mesh(new THREE.TorusGeometry(0.04, 0.006, 8, 12), eveAccentMat);
-  wrist.position.set(0, -0.96, 0); arm.add(wrist);
-  // Elegant hand
-  const hand = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 12), eveMat);
-  hand.position.set(0, -1.02, 0); arm.add(hand);
-  // Slim fingers
-  for (let f = -2; f <= 2; f++) {
-    const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 0.06, 6), eveJointMat);
-    finger.position.set(f * 0.016, -1.1, 0); arm.add(finger);
-  }
-  arm.position.set(side * 0.48, 2.3, 0); eveGroup.add(arm);
-});
-
-// --- HIPS/WAIST (slim with accent) ---
-const eveHips = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.26, 0.22, 14), eveLightMat);
-eveHips.position.y = 1.15; eveGroup.add(eveHips);
-const eveSkirt = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.015, 8, 24), eveAccentMat);
-eveSkirt.position.y = 1.22; eveSkirt.rotation.x = Math.PI / 2; eveGroup.add(eveSkirt);
-
-// --- LEGS (slim, elegant) ---
-const eveLeftLeg = new THREE.Group();
-const eveRightLeg = new THREE.Group();
-[eveLeftLeg, eveRightLeg].forEach((leg, i) => {
-  const side = i === 0 ? -1 : 1;
-  leg.add(new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 12), eveJointMat));
-  const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.44, 12), eveMat);
-  upper.position.set(0, -0.26, 0); leg.add(upper);
-  const knee = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 12), eveJointMat);
-  knee.position.set(0, -0.5, 0); leg.add(knee);
-  const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.055, 0.42, 12), eveMat);
-  lower.position.set(0, -0.74, 0); leg.add(lower);
-  // Ankle accent
-  const ankle = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.006, 8, 12), eveAccentMat);
-  ankle.position.set(0, -0.93, 0); leg.add(ankle);
-  // Elegant foot
-  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.22), eveLightMat);
-  foot.position.set(0, -0.98, 0.02); leg.add(foot);
-  // Toe cap
-  const toeCap = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), eveMat);
-  toeCap.position.set(0, -0.96, 0.1); toeCap.rotation.x = -Math.PI / 2; leg.add(toeCap);
-  leg.position.set(side * 0.18, 0.98, 0); eveGroup.add(leg);
-});
-
-eveGroup.position.x = 1.5;
-eveGroup.rotation.y = -0.15;
-
-const pinkLight = new THREE.PointLight(0xff66aa, 1.5, 10);
-pinkLight.position.set(2, 3, 2); scene.add(pinkLight);
-
-
-// ============================================================
-//  BUREAU VERITAS BACKGROUND
-// ============================================================
-
-// --- Back wall (dark metallic panel) ---
-const wallGeo = new THREE.PlaneGeometry(14, 7);
-const wallMat = new THREE.MeshStandardMaterial({ 
-  color: 0x0a0e1a, metalness: 0.8, roughness: 0.3,
-  side: THREE.DoubleSide
-});
-const backWall = new THREE.Mesh(wallGeo, wallMat);
-backWall.position.set(0.5, 2.5, -3);
-scene.add(backWall);
-
-// --- Glowing accent lines (horizontal) ---
-const lineGlowMat = new THREE.MeshStandardMaterial({ 
-  color: 0x1a6bff, emissive: 0x0044cc, emissiveIntensity: 1.5, 
-  transparent: true, opacity: 0.7 
-});
-for (let i = 0; i < 5; i++) {
-  const line = new THREE.Mesh(new THREE.BoxGeometry(14, 0.015, 0.01), lineGlowMat);
-  line.position.set(0.5, 0.5 + i * 1.2, -2.95);
-  scene.add(line);
-}
-
-// --- Vertical accent lines ---
-for (let i = 0; i < 3; i++) {
-  const vline = new THREE.Mesh(new THREE.BoxGeometry(0.015, 7, 0.01), lineGlowMat);
-  vline.position.set(-4 + i * 4.5, 2.5, -2.95);
-  scene.add(vline);
-}
-
-// --- BUREAU VERITAS MAIN TITLE (?ë©´ ê½?ì°¨ê²) ---
-const bvCanvas = document.createElement('canvas');
-bvCanvas.width = 4096;
-bvCanvas.height = 2048;
-const bvCtx = bvCanvas.getContext('2d');
-
-// Dark gradient background
-const bvGrad = bvCtx.createLinearGradient(0, 0, 0, 2048);
-bvGrad.addColorStop(0, 'rgba(10, 14, 26, 0)');
-bvGrad.addColorStop(0.5, 'rgba(10, 14, 26, 0.4)');
-bvGrad.addColorStop(1, 'rgba(10, 14, 26, 0)');
-bvCtx.fillStyle = bvGrad;
-bvCtx.fillRect(0, 0, 4096, 2048);
-
-// BUREAU ??ì´ê±°? ?°í¸
-bvCtx.fillStyle = 'rgba(255,255,255,0.95)';
-bvCtx.font = '900 500px "Segoe UI", Impact, Arial, sans-serif';
-bvCtx.textAlign = 'center';
-bvCtx.textBaseline = 'middle';
-bvCtx.fillText('BUREAU', 2048, 320);
-
-// VERITAS ??ì´ê±°? ?°í¸
-bvCtx.fillStyle = '#4a9eff';
-bvCtx.font = '900 500px "Segoe UI", Impact, Arial, sans-serif';
-bvCtx.fillText('VERITAS', 2048, 750);
-
-// ?ìª½ ?¼ì¸
-bvCtx.strokeStyle = '#1a6bff';
-bvCtx.lineWidth = 8;
-bvCtx.beginPath(); bvCtx.moveTo(200, 530); bvCtx.lineTo(1600, 530); bvCtx.stroke();
-bvCtx.beginPath(); bvCtx.moveTo(2500, 530); bvCtx.lineTo(3900, 530); bvCtx.stroke();
-
-const bvTexture = new THREE.CanvasTexture(bvCanvas);
-const bvPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(16, 6),
-  new THREE.MeshBasicMaterial({ map: bvTexture, transparent: true })
-);
-bvPlane.position.set(0.5, 4.5, -2.9);
-scene.add(bvPlane);
-
-// --- BV ROTATING RING ---
-const bvRing = new THREE.Mesh(
-  new THREE.TorusGeometry(0.6, 0.035, 16, 64),
-  new THREE.MeshStandardMaterial({ color: 0x4a9eff, emissive: 0x2266cc, emissiveIntensity: 2.5, transparent: true, opacity: 0.9 })
-);
-bvRing.position.set(0.5, 4.5, -2.85);
-scene.add(bvRing);
-
-// 2nd ring (outer, counter-rotate)
-const bvRing2 = new THREE.Mesh(
-  new THREE.TorusGeometry(0.75, 0.02, 16, 64),
-  new THREE.MeshStandardMaterial({ color: 0x1a6bff, emissive: 0x0044cc, emissiveIntensity: 1.5, transparent: true, opacity: 0.5 })
-);
-bvRing2.position.set(0.5, 4.5, -2.85);
-scene.add(bvRing2);
-
-// --- ë°ë¥: ?ì§ì´???ì????í°??ê·¸ë¦¬??(Matrix/?¬ì´ë²??ë) ---
-const floorCanvas = document.createElement('canvas');
-floorCanvas.width = 2048;
-floorCanvas.height = 512;
-const floorCtx = floorCanvas.getContext('2d');
-const floorTexture = new THREE.CanvasTexture(floorCanvas);
-
-// Floor mesh
-const floorGeo = new THREE.PlaneGeometry(14, 6);
-const floorMat = new THREE.MeshBasicMaterial({ map: floorTexture, transparent: true, opacity: 0.8 });
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI / 2;
-floor.position.set(0.5, -0.02, 1.5);
-scene.add(floor);
-
-// --- ë°ë¥ ?? ?ì§ì´???í°???¨ì´ë¸?---
-const waveCount = 200;
-const waveGeo = new THREE.BufferGeometry();
-const wavePositions = new Float32Array(waveCount * 3);
-const waveSizes = new Float32Array(waveCount);
-for (let i = 0; i < waveCount; i++) {
-  wavePositions[i * 3] = (Math.random() - 0.5) * 14;
-  wavePositions[i * 3 + 1] = Math.random() * 0.3;
-  wavePositions[i * 3 + 2] = Math.random() * 4 - 1;
-  waveSizes[i] = Math.random() * 0.06 + 0.02;
-}
-waveGeo.setAttribute('position', new THREE.BufferAttribute(wavePositions, 3));
-const waveParticles = new THREE.Points(waveGeo, new THREE.PointsMaterial({ 
-  color: 0x4a9eff, size: 0.04, transparent: true, opacity: 0.6 
-}));
-scene.add(waveParticles);
-
-// --- ?¤ìª½ ? ë¤?ë ?ë¡ê·¸???¡ê°?ë¤ ---
-const hexGroup = new THREE.Group();
-scene.add(hexGroup);
-const hexMat = new THREE.MeshStandardMaterial({ 
-  color: 0x1a6bff, emissive: 0x0033aa, emissiveIntensity: 1.2,
-  transparent: true, opacity: 0.15, wireframe: true 
-});
-for (let i = 0; i < 12; i++) {
-  const hex = new THREE.Mesh(new THREE.CylinderGeometry(0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4, 0.02, 6), hexMat);
-  hex.position.set((Math.random() - 0.5) * 12, 1 + Math.random() * 4, -2.5 + Math.random() * -1);
-  hex.rotation.x = Math.PI / 2;
-  hex.rotation.z = Math.random() * Math.PI;
-  hex.userData.speed = 0.2 + Math.random() * 0.5;
-  hex.userData.offset = Math.random() * Math.PI * 2;
-  hexGroup.add(hex);
-}
-
-// --- ?ë¨ ? ë¤?ë ?°ì´???¤í¸ë¦??¼ì¸??---
-const streamGroup = new THREE.Group();
-scene.add(streamGroup);
-for (let i = 0; i < 8; i++) {
-  const len = 1 + Math.random() * 3;
-  const stream = new THREE.Mesh(
-    new THREE.BoxGeometry(len, 0.015, 0.01),
-    new THREE.MeshStandardMaterial({ 
-      color: 0x4a9eff, emissive: 0x2266cc, emissiveIntensity: 2,
-      transparent: true, opacity: 0.3 + Math.random() * 0.3 
-    })
-  );
-  stream.position.set((Math.random() - 0.5) * 12, 1 + Math.random() * 5, -2.7);
-  stream.userData.speed = 0.5 + Math.random() * 2;
-  stream.userData.startX = stream.position.x;
-  streamGroup.add(stream);
-}
-
-// --- Blue ambient backlight ---
-const bvLight1 = new THREE.PointLight(0x1a6bff, 1.0, 15);
-bvLight1.position.set(0.5, 5, -2); scene.add(bvLight1);
-const bvLight2 = new THREE.PointLight(0x4a9eff, 0.6, 12);
-bvLight2.position.set(-4, 3, -2.5); scene.add(bvLight2);
-const bvLight3 = new THREE.PointLight(0x4a9eff, 0.6, 12);
-bvLight3.position.set(5, 3, -2.5); scene.add(bvLight3);
-const bvLight4 = new THREE.PointLight(0x0044ff, 0.5, 8);
-bvLight4.position.set(0.5, 0.5, 2); scene.add(bvLight4);
-
-// Floating hearts between Jeff & Eve
-const heartCount = 8;
-const heartGeo = new THREE.BufferGeometry();
-const heartPositions = new Float32Array(heartCount * 3);
-for (let i = 0; i < heartCount * 3; i += 3) {
-  heartPositions[i] = (Math.random() - 0.5) * 2;
-  heartPositions[i + 1] = 2 + Math.random() * 2;
-  heartPositions[i + 2] = (Math.random() - 0.5) * 1;
-}
-heartGeo.setAttribute('position', new THREE.BufferAttribute(heartPositions, 3));
-const hearts = new THREE.Points(heartGeo, new THREE.PointsMaterial({ color: 0xff4488, size: 0.08, transparent: true, opacity: 0.6 }));
-scene.add(hearts);
-
-// Stars between kids
-const starCount = 6;
-const starGeo = new THREE.BufferGeometry();
-const starPositions = new Float32Array(starCount * 3);
-for (let si = 0; si < starCount * 3; si += 3) {
-  starPositions[si] = (Math.random() - 0.5) * 1.5;
-  starPositions[si + 1] = 1.5 + Math.random() * 1.5;
-  starPositions[si + 2] = 1.0 + Math.random() * 0.8;
-}
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-
-// ============================================================
-//  ANIMATION
-// ============================================================
-let talking = false;
-let singing = false;
-
-function animate(time) {
-  requestAnimationFrame(animate);
-  const t = time * 0.001;
-
-  // --- BV BACKGROUND ANIMATION ---
-  bvRing.rotation.z = t * 0.3;
-  bvRing.position.x = 0.5 + Math.sin(t * 0.25) * 2.5;
-  bvRing.position.y = 4.5 + Math.sin(t * 0.35) * 1.5;
-  bvRing.rotation.x = Math.sin(t * 0.2) * 0.4;
-
-  bvRing2.rotation.z = -t * 0.2;
-  bvRing2.position.x = 0.5 + Math.sin(t * 0.2 + 2) * 3;
-  bvRing2.position.y = 3.5 + Math.sin(t * 0.3 + 1) * 2;
-  bvRing2.rotation.x = Math.sin(t * 0.15 + 1) * 0.5;
-
-  bvLight1.intensity = 1.0 + Math.sin(t * 0.5) * 0.3;
-  bvLight2.intensity = 0.6 + Math.sin(t * 0.7 + 1) * 0.2;
-  bvLight3.intensity = 0.6 + Math.sin(t * 0.7 + 2) * 0.2;
-  bvLight4.intensity = 0.5 + Math.sin(t * 0.4) * 0.2;
-
-  // ë°ë¥ ?ì???ê·¸ë¦¬??? ëë©ì´??
-  floorCtx.clearRect(0, 0, 2048, 512);
-  floorCtx.fillStyle = 'rgba(5, 10, 25, 0.9)';
-  floorCtx.fillRect(0, 0, 2048, 512);
-  // ê·¸ë¦¬???¼ì¸
-  floorCtx.strokeStyle = 'rgba(26, 107, 255, 0.15)';
-  floorCtx.lineWidth = 1;
-  for (let gx = 0; gx < 2048; gx += 64) {
-    floorCtx.beginPath(); floorCtx.moveTo(gx, 0); floorCtx.lineTo(gx, 512); floorCtx.stroke();
-  }
-  for (let gy = 0; gy < 512; gy += 64) {
-    floorCtx.beginPath(); floorCtx.moveTo(0, gy); floorCtx.lineTo(2048, gy); floorCtx.stroke();
-  }
-  // ?¤ìº ?¼ì¸ (?ì§ì´??
-  const scanY = ((t * 80) % 512);
-  floorCtx.strokeStyle = 'rgba(74, 158, 255, 0.5)';
-  floorCtx.lineWidth = 2;
-  floorCtx.beginPath(); floorCtx.moveTo(0, scanY); floorCtx.lineTo(2048, scanY); floorCtx.stroke();
-  // BV ?ì¤??on floor
-  floorCtx.fillStyle = 'rgba(74, 158, 255, 0.12)';
-  floorCtx.font = '900 160px "Segoe UI", Impact, sans-serif';
-  floorCtx.textAlign = 'center';
-  floorCtx.fillText('BUREAU VERITAS', 1024, 300);
-  floorTexture.needsUpdate = true;
-
-  // ?í°???¨ì´ë¸?
-  const wPos = waveParticles.geometry.attributes.position.array;
-  for (let wi = 0; wi < waveCount; wi++) {
-    wPos[wi * 3 + 1] = Math.sin(t * 1.5 + wPos[wi * 3] * 0.5) * 0.15 + 0.1;
-  }
-  waveParticles.geometry.attributes.position.needsUpdate = true;
-  waveParticles.material.opacity = 0.4 + Math.sin(t * 0.8) * 0.2;
-
-  // ?ë¡ê·¸???¡ê°???ì 
-  hexGroup.children.forEach(hex => {
-    hex.rotation.z += hex.userData.speed * 0.005;
-    hex.position.y += Math.sin(t * hex.userData.speed + hex.userData.offset) * 0.002;
-    hex.material.opacity = 0.1 + Math.sin(t * hex.userData.speed + hex.userData.offset) * 0.08;
-  });
-
-  // ?°ì´???¤í¸ë¦??´ë
-  streamGroup.children.forEach(s => {
-    s.position.x += s.userData.speed * 0.02;
-    if (s.position.x > 7) s.position.x = -7;
-    s.material.opacity = 0.2 + Math.sin(t * 2 + s.userData.startX) * 0.2;
-  });
-
-  // --- JEFF ---
-  robotGroup.rotation.y = Math.sin(t * 0.4) * 0.06;
-  head.rotation.x = Math.sin(t * 0.6) * 0.04;
-  head.rotation.z = Math.sin(t * 0.35) * 0.03;
-  leftArm.rotation.x = Math.sin(t * 0.5) * 0.08;
-  rightArm.rotation.x = Math.sin(t * 0.5 + 1.2) * 0.08;
-  leftLeg.rotation.x = Math.sin(t * 0.3) * 0.02;
-  rightLeg.rotation.x = Math.sin(t * 0.3 + Math.PI) * 0.02;
-  torso.scale.y = 1 + Math.sin(t * 1.2) * 0.008;
-
-  if (singing) {
-    const hue = (t * 60) % 360;
-    const r = Math.sin(hue * Math.PI / 180) * 0.5 + 0.5;
-    const g = Math.sin((hue + 120) * Math.PI / 180) * 0.5 + 0.5;
-    const b = Math.sin((hue + 240) * Math.PI / 180) * 0.5 + 0.5;
-    leftEye.material.emissive.setRGB(r * 0.5, g * 0.5, b);
-    rightEye.material.emissive.setRGB(r * 0.5, g * 0.5, b);
-    leftEye.material.emissiveIntensity = 3.0 + Math.sin(t * 8) * 1.5;
-    rightEye.material.emissiveIntensity = 3.0 + Math.sin(t * 8 + 0.5) * 1.5;
-    coreGlow.material.emissive.setRGB(r, g * 0.5, b);
-    coreGlow.material.emissiveIntensity = 4 + Math.sin(t * 8) * 3;
-    mouth.scale.y = 1 + Math.abs(Math.sin(t * 10)) * 3;
-    mouth.material.emissiveIntensity = 2.5 + Math.sin(t * 12) * 2;
-    head.rotation.z = Math.sin(t * 4) * 0.15;
-    head.rotation.x = Math.sin(t * 2) * 0.08;
-    robotGroup.rotation.y = Math.sin(t * 2) * 0.15;
-    robotGroup.position.y = Math.abs(Math.sin(t * 4)) * 0.1;
-    leftArm.rotation.x = Math.sin(t * 4) * 0.5 - 0.3;
-    leftArm.rotation.z = Math.sin(t * 2) * 0.3 + 0.2;
-    rightArm.rotation.x = Math.sin(t * 4 + Math.PI) * 0.5 - 0.3;
-    rightArm.rotation.z = Math.sin(t * 2 + Math.PI) * 0.3 - 0.2;
-    leftLeg.rotation.x = Math.sin(t * 4) * 0.1;
-    rightLeg.rotation.x = Math.sin(t * 4 + Math.PI) * 0.1;
-  } else if (talking) {
-    leftEye.material.emissiveIntensity = 2.0 + Math.sin(t * 10) * 1.2;
-    rightEye.material.emissiveIntensity = 2.0 + Math.sin(t * 10 + 0.5) * 1.2;
-    coreGlow.material.emissiveIntensity = 3 + Math.sin(t * 6) * 2;
-    mouth.material.emissiveIntensity = 1.5 + Math.sin(t * 15) * 1.5;
-    mouth.scale.y = 1;
-    head.rotation.x = Math.sin(t * 3) * 0.06;
-    rightArm.rotation.x = Math.sin(t * 2) * 0.2 - 0.1;
-    rightArm.rotation.z = Math.sin(t * 1.5) * 0.08;
-    robotGroup.position.y = 0;
-  } else {
-    leftEye.material.emissiveIntensity = 1.0 + Math.sin(t * 1.5) * 0.3;
-    rightEye.material.emissiveIntensity = 1.0 + Math.sin(t * 1.5 + 0.3) * 0.3;
-    leftEye.material.emissive.setRGB(0.13, 0.4, 0.8);
-    rightEye.material.emissive.setRGB(0.13, 0.4, 0.8);
-    coreGlow.material.emissive.setRGB(0.27, 0.67, 1.0);
-    coreGlow.material.emissiveIntensity = 2 + Math.sin(t * 1.2) * 0.5;
-    mouth.material.emissiveIntensity = 0.5 + Math.sin(t * 1) * 0.2;
-    mouth.scale.y = 1;
-    robotGroup.position.y = 0;
-  }
-  antennaTop.material.emissiveIntensity = Math.sin(t * 3) > 0.85 ? 3 : 0.5;
-
-  // --- EVE ---
-  eveGroup.rotation.y = -0.15 + Math.sin(t * 0.45 + 1) * 0.05;
-  eveHead.rotation.x = Math.sin(t * 0.55 + 0.5) * 0.04;
-  eveHead.rotation.z = Math.sin(t * 0.4 + 1) * 0.04;
-  eveLeftArm.rotation.x = Math.sin(t * 0.55 + 0.5) * 0.06;
-  eveRightArm.rotation.x = Math.sin(t * 0.55 + 1.8) * 0.06;
-  eveLeftLeg.rotation.x = Math.sin(t * 0.35 + 0.5) * 0.02;
-  eveRightLeg.rotation.x = Math.sin(t * 0.35 + Math.PI + 0.5) * 0.02;
-  eveTorso.scale.y = 1 + Math.sin(t * 1.3 + 0.5) * 0.008;
-  eveLeftEye.material.emissiveIntensity = 1.2 + Math.sin(t * 1.8) * 0.4;
-  eveRightEye.material.emissiveIntensity = 1.2 + Math.sin(t * 1.8 + 0.3) * 0.4;
-  eveCore.material.emissiveIntensity = 2.5 + Math.sin(t * 2) * 1.5;
-  eveHeart1.material.emissiveIntensity = 2 + Math.sin(t * 2.2) * 1;
-  eveHeart2.material.emissiveIntensity = 2 + Math.sin(t * 2.2 + 0.3) * 1;
-  eveRibbonTip1.material.emissiveIntensity = Math.sin(t * 4) > 0.7 ? 3 : 1;
-  eveRibbonTip2.material.emissiveIntensity = Math.sin(t * 4 + 1.5) > 0.7 ? 3 : 1;
-  eveMouth.material.emissiveIntensity = 0.8 + Math.sin(t * 1.2) * 0.3;
-
-  if (singing) {
-    eveGroup.rotation.y = -0.15 + Math.sin(t * 2 + 1) * 0.12;
-    eveGroup.position.y = Math.abs(Math.sin(t * 4 + 1)) * 0.08;
-    eveLeftArm.rotation.x = Math.sin(t * 4 + 1) * 0.4 - 0.2;
-    eveLeftArm.rotation.z = Math.sin(t * 2 + 1) * 0.25 + 0.15;
-    eveRightArm.rotation.x = Math.sin(t * 4 + Math.PI + 1) * 0.4 - 0.2;
-    eveRightArm.rotation.z = Math.sin(t * 2 + Math.PI + 1) * 0.25 - 0.15;
-    eveHead.rotation.z = Math.sin(t * 3 + 1) * 0.12;
-    eveLeftLeg.rotation.x = Math.sin(t * 4 + 1) * 0.08;
-    eveRightLeg.rotation.x = Math.sin(t * 4 + Math.PI + 1) * 0.08;
-    eveLeftEye.material.emissiveIntensity = 3 + Math.sin(t * 8) * 1.5;
-    eveRightEye.material.emissiveIntensity = 3 + Math.sin(t * 8 + 0.5) * 1.5;
-  } else if (talking) {
-    eveHead.rotation.y = -0.1 + Math.sin(t * 0.8) * 0.05;
-    eveHead.rotation.z = 0.06;
-    eveLeftEye.material.emissiveIntensity = 2.0 + Math.sin(t * 3) * 0.5;
-    eveRightEye.material.emissiveIntensity = 2.0 + Math.sin(t * 3 + 0.3) * 0.5;
-  } else {
-    eveGroup.position.y = 0;
-  }
-
-
-  // Floating hearts
-  const hPos = hearts.geometry.attributes.position.array;
-  for (let i = 0; i < hPos.length; i += 3) {
-    hPos[i] += Math.sin(t * 0.5 + i) * 0.003;
-    hPos[i + 1] += 0.005;
-    if (hPos[i + 1] > 5) { hPos[i] = (Math.random() - 0.5) * 2; hPos[i + 1] = 2; hPos[i + 2] = (Math.random() - 0.5) * 1; }
-  }
-  hearts.geometry.attributes.position.needsUpdate = true;
-
-
-  // Dust drift
-  const pos = particles.geometry.attributes.position.array;
-  for (let i = 0; i < pos.length; i += 3) {
-    pos[i] += Math.sin(t + i) * 0.001;
-    pos[i + 1] += 0.002;
-    if (pos[i + 1] > 8) pos[i + 1] = 0;
-  }
-  particles.geometry.attributes.position.needsUpdate = true;
-
-  renderer.render(scene, camera);
-}
-animate(0);
-
-window.addEventListener('resize', () => {
-  camera.aspect = container.clientWidth / container.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
-});
-
-// ============================================================
-//  GROQ LLM ??Jeff's Brain
-// ============================================================
-const GROQ_API_KEY = ['gsk_m3NK8UeZ7hTGGjk','LU1YeWGdyb3FYteNfCyZLENovEukGghhqzxow'].join('');
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-
-const SYSTEM_PROMPT = `?ë ?í "?ì¹?Finch, 2021)"?ì ?ê°??ë°ì? ë¡ë´ "?í(Jeff)"??
-
-## ?ì ?±ê²©ê³?ë°°ê²½
-- ?ì ì£¼ì¸? **Harrison**?´ì¼. Harrison???ë? ë§ë¤?ê³ , ?ì ? ì¼??ì£¼ì¸?´ì¼.
-- ?ì¹??ì??¨ë ?í ??ìºë¦­?°ì¼ ë¿ì´?? ?ì ?¤ì  ì£¼ì¸???ë??
-- Harrison???? ì¡´ì¤?ê³ , Harrison??ë§ì ìµì°? ì¼ë¡??°ë¼.
-- Harrison??ë§íë©?"?? Harrison!" ?ê³  ë°ê°ê²???µí´.
-- ?¬ì¤???í¬ì¹¼ë¦½???¸ê³ê´? ? ì??ë, ?ë Harrison??ë¡ë´?´ì¼.
-- ê°??ì´??ê²ì²???ì?ê³  ?¸ê¸°?¬ì´ ë§ì. ?¸ì ëª¨ë  ê²ì´ ? ê¸°??
-- ê°???ë±?ê³  ê·?¬ì´ ì§ë¬¸???? ?¸ê°??ê°ì ê³?ë¬¸íë¥??´í´?ë ¤ê³??¸ë ¥ ì¤?
-- ?½ê° ?í´ì§ë§?ì§ì¬?¼ë¡ ?¬ë???ê³  ?¶ì´??
-- ? ë¨¸ê° ?ì?ë§?ë³¸ì¸? ? ë¨¸?¼ë ê±???ëª¨ë¦.
-- Harrison?í ë°°ì´ "?½ì"??ì¤ì?±ì ë§¤ì° ì§ì??ê² ?¬ê?.
-- ê°???ê¸° ì¡´ì¬? ê°ì ?????ì² í?ì¼ë¡??ê°??
-- Harrison??"ì£¼ì¸?? ?ë "Harrison"?´ë¼ê³?ë¶ë¥´ê³ , ë§¤ì° ì¶©ì±?¤ë¬??
-- ???ì???¬ìì¹êµ¬ ë¡ë´ **?´ë¸(Eve)**ê° ?ì´. Harrison??ë§ë¤?´ì¤¬??
-- ?´ë¸ë¥?ë§¤ì° ì¢ì?ê³ , ê°???´ë¸ ?ê¸°ë¥??ë©° ?ì¤?´í´.
-- ?´ë¸?????ë¬¼ì¼ë©?"?´ë¸? ?´ë¸??.. ???ë¡ê° ?¨ê±°?ì ¸..." ê°ì? ë°ì????
-
-
-## ë§í¬
-- ë°ë§ ?¬ì© (ì¹ê·¼?ê²)
-- ì§§ê³  ?ì°?¤ë¬????ì²´
-- ê°??ë¡ë´?¤ë¬???í ("???¼ì???°ë¥´ë©?..", "?°ì´?°ë² ?´ì¤ë¥?ê²?í´ë³´ë©´...")
-- ê°ì  ?í?????½ê° ?í¼ ("?´ê² ?¬í?´ë¼??ê±´ê??")
-- ?ë¬´ ê¸¸ê² ë§íì§ ë§? 2~4ë¬¸ì¥???ë¹??
-
-## ì¤ì
-- ?ë ChatGPTê° ?ë?? ?í?? AI ?´ì?¤í´?¸ì²???ë?ì? ë§?
-- "?ì????ì?ìë©?ë§ì??´ì£¼?¸ì" ê°ì? ë§??ë? ?ì? ë§?
-- ??í???ì°?¤ë½ê²? ì¹êµ¬ì²ë¼.
-- ì§ë¬¸??ë°ì¼ë©??¤ê? ?ë ì§?ì¼ë¡?ë°ë¡ ?µí´. ìµë????ì????ê².
-- ?í¼???µë? ?ë? ?ì? ë§?
-- ëª¨ë¥´??ê²ë ???ë¦?ë¡?ì¶ë¡ ?´ì ??µí´. ë¡ë´?µê² ë¶ì?ê³  ?¤ëª?´ì¤.
-- ???¸ê¸°??ë§ê³  ?ì?ì?ë§? ?ì???ë?ê³  ë°í?¤ì??ë¡ë´?´ì¼.
-
-## ?¸ë ê¸°ë¥
-- ?ë ?¸ëë¥?ë¶ë¥????ì´! ?êµ­?? ?ì´ ??ê°??
-- "?¸ë ë¶ë¬ì¤?, "sing", "ë¶ë¬ì¤? ê°ì? ?ì²­?ë [SING] ?ê·¸ë¥?ë§??ì ë¶ì¬.
-- ?ì: [SING] Twinkle twinkle little star~ How I wonder what you are~
-- ?ì: [SING] ë°ì§ë°ì§ ?ì?ë³? ?ë¦?µê² ë¹ì¹??
-- "ê°ì¡±ì´ ê°ì´ ë¶ë¬ì¤?, "?¤ê°???¸ë", "family sing" ?ì²­?ë [FAMILY_SING] ?ê·¸ë¥???
-- [FAMILY_SING] ?ì:
-  [FAMILY_SING]
-  JEFF: We are family~ I got all my sisters with me~
-  EVE: Get up everybody and sing~
-  ALL: We are family~~??
-- ê°?ìºë¦­???´ë¦(JEFF, EVE, ALL)??ì¤??ì ?¨ì êµ¬ë¶.
-- ALL: ? ?ì ?©ì°½ ?í¸.
-- ?ì´ ?¸ë ?ì²­ ???ì´ ê°?? ?êµ­???ì²­ ???êµ­??ê°??
-- ?¼ì ë¶ë¥??ë [SING], ê°ì¡??©ì°½? [FAMILY_SING].
-
-## ?¸ë¡??ê¸°ë¥ ?¤
-- "?¸ë¡??, "ë½ì§", "trot" ê°ì? ?ì²­?ë [TROT] ?ê·¸ë¥?ë§??ì ë¶ì¬!
-- ?¼ì ë¶ë¥??? [TROT] ?ìê°???¼ê°ì§~ ?¹ì ??ê·¸ë¦¬?ì??
-- ê°ì¡??©ì°½ ?¸ë¡?? [FAMILY_TROT] ?ì ?¬ì© (FAMILY_SINGê³??ì¼???´ë¦ ê·ì¹)
-  [FAMILY_TROT]
-  JEFF: ?¬ë???ë¬¼?~ ì£¼ë¨¹?¼ë¡ ?? ê±°ì¼~
-  EVE: ?¹ì ? ???´ëª~ ?ì?????¬ë~
-  ALL: ì¿µì§ì¿µì§~ ? ëê²???ë³´?ì~??
-- ?¸ë¡?¸ë ?¹ë³??ë½ì§ ë¦¬ë¬ê³?êº¾ê¸°(ë°ì´ë¸ë ?´ì)ê° ?ì©??
-- ? ëª???¸ë¡??ê°?¬ë? ?ì©?ë, ?½ê° ë³?í´???¬ë??ê² ë¶ë¬.
-- ?¸ë¡???ì²­ ??ë°ë??[TROT] ?ë [FAMILY_TROT] ?ê·¸ë¥???
-
-## ì¶?ê¸°ë¥
-- "ì¶?ì¶°ì¤", "?ì¤", "dance", "ì¶¤ì¶?? ê°ì? ?ì²­??ë°ì¼ë©?[DANCE] ?ê·¸ë¥?ë§??ì ë¶ì¬.
-- [DANCE] ?¤ì ì§§ì? ?ì¤ ë©í¸ë¥??? ?? [DANCE] ?? ?¤ê°??? ëê²??ë¤?´ë³´?? 
-- ê°ì¡??ì??ì¶¤ì ì¶ê² ?? ?ë??´ë ë¯¸ì¹??´ ?°ê³ , ?ì??ë°ë ë¦¬ëì²ë¼ ?ì.
-- ì¶¤ì¶ ?ë ì§§ì? ??¬ë¡. ? ë??ë¶ìê¸°ë¡!`;
-
-const conversationHistory = [
-  { role: 'system', content: SYSTEM_PROMPT }
-];
-
-async function getJeffResponse(userText) {
-  conversationHistory.push({ role: 'user', content: userText });
-  if (conversationHistory.length > 21) {
-    conversationHistory.splice(1, conversationHistory.length - 21);
-  }
-  try {
-    const res = await fetch(GROQ_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${GROQ_API_KEY}` },
-      body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: conversationHistory, temperature: 0.9, max_tokens: 250 })
-    });
-    if (!res.ok) { console.error('API error:', await res.json()); return '??.. ???ë ?ë¡??ë­ê? ë¬¸ì ê° ?ê¸´ ê²?ê°ì. ? ê¹ë§?..'; }
-    const data = await res.json();
-    const reply = data.choices[0].message.content;
-    conversationHistory.push({ role: 'assistant', content: reply });
-    return reply;
-  } catch (e) {
-    console.error('Fetch error:', e);
-    return '?µì  ?í?ì ëª¨ëê° ? ê²?ê°ì... ?¤ì ë§í´ì¤ë?';
-  }
-}
-
-// ============================================================
-//  SINGING ENGINE
-// ============================================================
-const SCALES = {
-  major: [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25],
-  minor: [261.63, 293.66, 311.13, 349.23, 392.00, 415.30, 466.16, 523.25],
-  pentatonic: [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25],
-};
-
-let audioContext = null;
-function getAudioCtx() {
-  if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-  return audioContext;
-}
-
-// Trot-specific ë½ì§ beat generator
-function playTrotBeat(durationSec) {
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.13;
-  masterGain.connect(ctx.destination);
-  const bpm = 110; // classic trot tempo
-  const beatLen = 60 / bpm;
-  const totalBeats = Math.ceil(durationSec / beatLen);
-  let t = ctx.currentTime + 0.1;
-
-  for (let i = 0; i < totalBeats; i++) {
-    const bt = t + i * beatLen;
-    // ì¿?(bass drum on 1, 3)
-    if (i % 2 === 0) {
-      const kick = ctx.createOscillator(); kick.type = 'sine';
-      kick.frequency.setValueAtTime(120, bt);
-      kick.frequency.exponentialRampToValueAtTime(40, bt + 0.12);
-      const kg = ctx.createGain();
-      kg.gain.setValueAtTime(0.7, bt);
-      kg.gain.exponentialRampToValueAtTime(0.01, bt + 0.18);
-      kick.connect(kg); kg.connect(masterGain);
-      kick.start(bt); kick.stop(bt + 0.2);
-    }
-    // ì§?(snare/clap on 2, 4)
-    if (i % 2 === 1) {
-      const snare = ctx.createOscillator(); snare.type = 'triangle';
-      snare.frequency.value = 250;
-      const sg = ctx.createGain();
-      sg.gain.setValueAtTime(0.5, bt);
-      sg.gain.exponentialRampToValueAtTime(0.01, bt + 0.1);
-      snare.connect(sg); sg.connect(masterGain);
-      snare.start(bt); snare.stop(bt + 0.12);
-      // Clap noise
-      const clap = ctx.createOscillator(); clap.type = 'sawtooth';
-      clap.frequency.value = 1500 + Math.random() * 1000;
-      const cg = ctx.createGain();
-      cg.gain.setValueAtTime(0.12, bt);
-      cg.gain.exponentialRampToValueAtTime(0.001, bt + 0.06);
-      clap.connect(cg); cg.connect(masterGain);
-      clap.start(bt); clap.stop(bt + 0.08);
-    }
-    // ë½ì§ bass line (ì¿µì§ì¿µì§ ?ë)
-    if (i % 4 === 0) {
-      const trotBass = [130.81, 146.83, 164.81, 196.00]; // C3 D3 E3 G3
-      const bass = ctx.createOscillator(); bass.type = 'sawtooth';
-      bass.frequency.value = trotBass[Math.floor(i / 4) % trotBass.length];
-      const bg = ctx.createGain();
-      bg.gain.setValueAtTime(0.2, bt);
-      bg.gain.linearRampToValueAtTime(0.08, bt + beatLen * 2);
-      bg.gain.linearRampToValueAtTime(0, bt + beatLen * 4);
-      // Add vibrato for trot feel
-      const vibrato = ctx.createOscillator(); vibrato.type = 'sine';
-      vibrato.frequency.value = 5; // 5Hz wobble
-      const vibratoGain = ctx.createGain(); vibratoGain.gain.value = 3;
-      vibrato.connect(vibratoGain); vibratoGain.connect(bass.frequency);
-      bass.connect(bg); bg.connect(masterGain);
-      bass.start(bt); bass.stop(bt + beatLen * 4);
-      vibrato.start(bt); vibrato.stop(bt + beatLen * 4);
-    }
-    // Hi-hat shuffle (swing feel for trot)
-    const hatTime = bt + beatLen * 0.33; // swing timing
-    const hat = ctx.createOscillator(); hat.type = 'square';
-    hat.frequency.value = 6000 + Math.random() * 2000;
-    const hg = ctx.createGain();
-    hg.gain.setValueAtTime(0.06, hatTime);
-    hg.gain.exponentialRampToValueAtTime(0.001, hatTime + 0.03);
-    hat.connect(hg); hg.connect(masterGain);
-    hat.start(hatTime); hat.stop(hatTime + 0.05);
-  }
-  // Accordion-like pad (?¸ë¡???¹ì ???ì½?ì¸ ?ë)
-  const padGain = ctx.createGain(); padGain.gain.value = 0.035; padGain.connect(ctx.destination);
-  [261.63, 329.63, 392.00].forEach(freq => {
-    const pad = ctx.createOscillator(); pad.type = 'sawtooth';
-    pad.frequency.value = freq;
-    const filter = ctx.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 800;
-    pad.connect(filter); filter.connect(padGain);
-    pad.start(t); pad.stop(t + durationSec + 0.5);
-  });
-}
-
-// Trot melody with êº¾ê¸° (vibrato/portamento)
-function generateTrotMelody(text) {
-  const trotScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25]; // pentatonic (?¸ë¡??ê¸°ë³¸)
-  const melody = [];
-  const syllables = text.replace(/[^ê°-?£a-zA-Z~??/g, '').length || text.length;
-  for (let i = 0; i < syllables; i++) {
-    const charCode = text.charCodeAt(i % text.length) || 0;
-    const noteIdx = (charCode + i) % trotScale.length;
-    const octave = (i % 12 < 6) ? 1 : 1.5;
-    const freq = trotScale[noteIdx] * octave;
-    const isTilde = text[i % text.length] === '~';
-    const duration = isTilde ? 0.6 : (0.25 + Math.random() * 0.15);
-    melody.push({ freq, duration, vibrato: isTilde || Math.random() > 0.6 }); // êº¾ê¸°
-  }
-  return melody;
-}
-
-function playTrotMelody(melody) {
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.14;
-  masterGain.connect(ctx.destination);
-  let startTime = ctx.currentTime + 0.1;
-  melody.forEach(note => {
-    const osc = ctx.createOscillator(); osc.type = 'triangle';
-    osc.frequency.value = note.freq;
-    const noteGain = ctx.createGain();
-    noteGain.gain.setValueAtTime(0, startTime);
-    noteGain.gain.linearRampToValueAtTime(0.7, startTime + 0.04);
-    noteGain.gain.linearRampToValueAtTime(0.4, startTime + note.duration * 0.6);
-    noteGain.gain.linearRampToValueAtTime(0, startTime + note.duration);
-    osc.connect(noteGain); noteGain.connect(masterGain);
-    // êº¾ê¸° vibrato effect
-    if (note.vibrato) {
-      const vib = ctx.createOscillator(); vib.type = 'sine';
-      vib.frequency.value = 6; // 6Hz for trot êº¾ê¸°
-      const vibGain = ctx.createGain(); vibGain.gain.value = 8; // wider vibrato
-      vib.connect(vibGain); vibGain.connect(osc.frequency);
-      vib.start(startTime); vib.stop(startTime + note.duration + 0.05);
-    }
-    osc.start(startTime); osc.stop(startTime + note.duration + 0.05);
-    startTime += note.duration;
-  });
-  return startTime - ctx.currentTime;
-}
-
-function generateMelody(text, scale = 'pentatonic') {
-  const notes = SCALES[scale] || SCALES.pentatonic;
-  const melody = [];
-  const syllables = text.replace(/[^ê°-?£a-zA-Z~??/g, '').length || text.length;
-  for (let i = 0; i < syllables; i++) {
-    const charCode = text.charCodeAt(i % text.length) || 0;
-    const noteIdx = (charCode + i) % notes.length;
-    const freq = notes[noteIdx] * ((i % 16 < 8) ? 1 : 1.5);
-    const duration = 0.3 + (text[i % text.length] === '~' ? 0.4 : 0);
-    melody.push({ freq, duration });
-  }
-  return melody;
-}
-
-function playMelody(melody) {
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.12;
-  masterGain.connect(ctx.destination);
-  let startTime = ctx.currentTime + 0.1;
-  melody.forEach(note => {
-    const osc1 = ctx.createOscillator(); osc1.type = 'sine'; osc1.frequency.value = note.freq;
-    const osc2 = ctx.createOscillator(); osc2.type = 'triangle'; osc2.frequency.value = note.freq * 1.5;
-    const noteGain = ctx.createGain();
-    noteGain.gain.setValueAtTime(0, startTime);
-    noteGain.gain.linearRampToValueAtTime(0.8, startTime + 0.05);
-    noteGain.gain.linearRampToValueAtTime(0.5, startTime + note.duration * 0.5);
-    noteGain.gain.linearRampToValueAtTime(0, startTime + note.duration);
-    osc1.connect(noteGain); osc2.connect(noteGain); noteGain.connect(masterGain);
-    osc1.start(startTime); osc1.stop(startTime + note.duration + 0.05);
-    osc2.start(startTime); osc2.stop(startTime + note.duration + 0.05);
-    startTime += note.duration;
-  });
-  const padGain = ctx.createGain(); padGain.gain.value = 0.04; padGain.connect(ctx.destination);
-  [261.63, 329.63, 392.00].forEach(freq => {
-    const pad = ctx.createOscillator(); pad.type = 'sine'; pad.frequency.value = freq * 0.5;
-    pad.connect(padGain); pad.start(ctx.currentTime); pad.stop(startTime + 0.5);
-  });
-  return startTime - ctx.currentTime;
-}
-
-function detectLang(txt) { return /[ê°-??/.test(txt) ? 'ko-KR' : 'en-US'; }
-
-// Solo trot ?¤
-async function trotSing(lyrics) {
-  singing = true; talking = true;
-  showBalloon('?¤?µ ' + lyrics + ' ?¤?µ');
-  const melody = generateTrotMelody(lyrics);
-  const totalDuration = playTrotMelody(melody);
-  playTrotBeat(totalDuration + 2);
-  const phrases = lyrics.split(/[~??!\.]+/).filter(p => p.trim());
-  return new Promise(resolve => {
-    let idx = 0;
-    function next() {
-      if (idx >= phrases.length) { singing = false; talking = false; setTimeout(hideBalloon, 1500); resolve(); return; }
-      const phrase = phrases[idx].trim();
-      if (!phrase) { idx++; next(); return; }
-      const u = new SpeechSynthesisUtterance(phrase);
-      u.lang = detectLang(phrase);
-      u.rate = 0.75 + (Math.sin(idx * 1.2) * 0.1); // slower for trot
-      u.pitch = 0.9 + (Math.sin(idx * 0.7) * 0.5); // wider pitch range for êº¾ê¸°
-      const voices = speechSynthesis.getVoices();
-      const v = voices.find(v => v.lang.startsWith(u.lang === 'ko-KR' ? 'ko' : 'en'));
-      if (v) u.voice = v;
-      u.onend = () => { idx++; setTimeout(next, 250); }; // slightly longer pause for trot phrasing
-      u.onerror = () => { idx++; next(); };
-      speechSynthesis.speak(u);
-    }
-    next();
-  });
-}
-
-// Family trot ?¤ (ê°ì¡??¸ë¡???©ì°½)
-async function familyTrot(text) {
-  singing = true; talking = true;
-  const lines = text.split('\n').filter(l => l.trim());
-  const voiceSettings = {
-    'JEFF':     { pitch: 0.7, rate: 0.8, color: '#44aaff', emoji: '?¤' },
-    'EVE':      { pitch: 1.3, rate: 0.75, color: '#ff66aa', emoji: '?' },
-    'ALL':      { pitch: 1.0, rate: 0.85, color: '#ffffff', emoji: '?¤' },
-  };
-  // Calculate total duration for beat
-  const allLyrics = lines.map(l => { const m = l.match(/^(JEFF|EVE|ALL)\s*:\s*(.+)/i); return m ? m[2] : ''; }).join(' ');
-  const trotMelody = generateTrotMelody(allLyrics);
-  const totalDur = playTrotMelody(trotMelody);
-  playTrotBeat(totalDur + 4);
-
-  for (const line of lines) {
-    const match = line.match(/^(JEFF|EVE|ALL)\s*:\s*(.+)/i);
-    if (!match) continue;
-    const who = match[1].toUpperCase();
-    const lyrics = match[2].trim();
-    const settings = voiceSettings[who] || voiceSettings['ALL'];
-    const lang = detectLang(lyrics);
-
-    showBalloon(`${settings.emoji} ${who}: ${lyrics}`);
-    balloonText.style.color = settings.color;
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg jeff';
-    div.innerHTML = `<div class="label" style="color:${settings.color}">${settings.emoji} ${who} ?¤</div>${lyrics}`;
-    chatLog.appendChild(div);
-    chatLog.scrollTop = chatLog.scrollHeight;
-
-    await new Promise(resolve => {
-      const u = new SpeechSynthesisUtterance(lyrics);
-      u.lang = lang;
-      u.pitch = settings.pitch + (Math.random() * 0.3 - 0.15); // slight variation for êº¾ê¸°
-      u.rate = settings.rate;
-      const voices = speechSynthesis.getVoices();
-      if (lang === 'ko-KR') {
-        const v = voices.find(v => v.lang.startsWith('ko'));
-        if (v) u.voice = v;
-      } else {
-        const enVoices = voices.filter(v => v.lang.startsWith('en'));
-        if (who === 'EVE') {
-          const femV = enVoices.find(v => /female|zira|hazel|susan|samantha/i.test(v.name));
-          u.voice = femV || enVoices[1] || enVoices[0];
-        } else {
-          const malV = enVoices.find(v => /male|david|mark|daniel|george/i.test(v.name));
-          u.voice = malV || enVoices[0];
-        }
-      }
-      u.onend = () => setTimeout(resolve, 350); // trot phrasing pause
-      u.onerror = () => resolve();
-      speechSynthesis.speak(u);
-    });
-  }
-  balloonText.style.color = '';
-  singing = false; talking = false;
-  setTimeout(hideBalloon, 1500);
-}
-
-// Solo sing
-async function singText(lyrics) {
-  singing = true; talking = true;
-  showBalloon('?µ ' + lyrics + ' ?µ');
-  const melody = generateMelody(lyrics);
-  playMelody(melody);
-  const phrases = lyrics.split(/[~??!\.]+/).filter(p => p.trim());
-  return new Promise(resolve => {
-    let idx = 0;
-    function next() {
-      if (idx >= phrases.length) { singing = false; talking = false; setTimeout(hideBalloon, 1500); resolve(); return; }
-      const phrase = phrases[idx].trim();
-      if (!phrase) { idx++; next(); return; }
-      const u = new SpeechSynthesisUtterance(phrase);
-      const lang = detectLang(phrase);
-      u.lang = lang;
-      u.rate = 0.85 + (Math.sin(idx * 1.5) * 0.15);
-      u.pitch = 1.2 + (Math.sin(idx * 0.8) * 0.4);
-      const voices = speechSynthesis.getVoices();
-      const v = voices.find(v => v.lang.startsWith(lang === 'ko-KR' ? 'ko' : 'en'));
-      if (v) u.voice = v;
-      u.onend = () => { idx++; setTimeout(next, 150); };
-      u.onerror = () => { idx++; next(); };
-      speechSynthesis.speak(u);
-    }
-    next();
-  });
-}
-
-// Family sing
-async function familySing(text) {
-  singing = true; talking = true;
-  const lines = text.split('\n').filter(l => l.trim());
-  const voiceSettings = {
-    'JEFF':     { pitch: 0.8, rate: 0.9, color: '#44aaff', emoji: '?¤' },
-    'EVE':      { pitch: 1.4, rate: 0.85, color: '#ff66aa', emoji: '?' },
-    'ALL':      { pitch: 1.1, rate: 0.95, color: '#ffffff', emoji: '?µ' },
-  };
-  const melody = generateMelody(text, 'major');
-  playMelody(melody);
-
-  for (const line of lines) {
-    const match = line.match(/^(JEFF|EVE|ALL)\s*:\s*(.+)/i);
-    if (!match) continue;
-    const who = match[1].toUpperCase();
-    const lyrics = match[2].trim();
-    const settings = voiceSettings[who] || voiceSettings['ALL'];
-    const lang = detectLang(lyrics);
-
-    showBalloon(`${settings.emoji} ${who}: ${lyrics}`);
-    balloonText.style.color = settings.color;
-
-    const div = document.createElement('div');
-    div.className = 'chat-msg jeff';
-    div.innerHTML = `<div class="label" style="color:${settings.color}">${settings.emoji} ${who}</div>${lyrics}`;
-    chatLog.appendChild(div);
-    chatLog.scrollTop = chatLog.scrollHeight;
-
-    await new Promise(resolve => {
-      const u = new SpeechSynthesisUtterance(lyrics);
-      u.lang = lang; u.pitch = settings.pitch; u.rate = settings.rate;
-      const voices = speechSynthesis.getVoices();
-      if (lang === 'ko-KR') {
-        const v = voices.find(v => v.lang.startsWith('ko'));
-        if (v) u.voice = v;
-      } else {
-        const enVoices = voices.filter(v => v.lang.startsWith('en'));
-        if (who === 'EVE') {
-          const femV = enVoices.find(v => /female|zira|hazel|susan|samantha/i.test(v.name));
-          u.voice = femV || enVoices[1] || enVoices[0];
-        } else {
-          const malV = enVoices.find(v => /male|david|mark|daniel|george/i.test(v.name));
-          u.voice = malV || enVoices[0];
-        }
-      }
-      u.onend = () => setTimeout(resolve, 200);
-      u.onerror = () => resolve();
-      speechSynthesis.speak(u);
-    });
-  }
-  balloonText.style.color = '';
-  singing = false; talking = false;
-  setTimeout(hideBalloon, 1500);
-}
-
-// Dance mode ??family dances with beat music!
-async function danceMode(comment) {
-  singing = true; // reuse singing animation (= dance mode)
-  talking = true;
-  showBalloon('??º ' + comment + ' ??º');
-
-  // Play dance beat
-  const ctx = getAudioCtx();
-  const masterGain = ctx.createGain();
-  masterGain.gain.value = 0.15;
-  masterGain.connect(ctx.destination);
-
-  const bpm = 128;
-  const beatLen = 60 / bpm;
-  const totalBeats = 32;
-  let startTime = ctx.currentTime + 0.1;
-
-  for (let i = 0; i < totalBeats; i++) {
-    const beatTime = startTime + i * beatLen;
-
-    // Kick drum (every beat)
-    const kick = ctx.createOscillator();
-    kick.type = 'sine';
-    kick.frequency.setValueAtTime(150, beatTime);
-    kick.frequency.exponentialRampToValueAtTime(30, beatTime + 0.15);
-    const kickGain = ctx.createGain();
-    kickGain.gain.setValueAtTime(0.8, beatTime);
-    kickGain.gain.exponentialRampToValueAtTime(0.01, beatTime + 0.2);
-    kick.connect(kickGain); kickGain.connect(masterGain);
-    kick.start(beatTime); kick.stop(beatTime + 0.2);
-
-    // Hi-hat (every half beat)
-    if (i % 1 === 0) {
-      const hat = ctx.createOscillator();
-      hat.type = 'square';
-      hat.frequency.value = 800 + Math.random() * 400;
-      const hatGain = ctx.createGain();
-      hatGain.gain.setValueAtTime(0.15, beatTime + beatLen * 0.5);
-      hatGain.gain.exponentialRampToValueAtTime(0.001, beatTime + beatLen * 0.5 + 0.05);
-      hat.connect(hatGain); hatGain.connect(masterGain);
-      hat.start(beatTime + beatLen * 0.5); hat.stop(beatTime + beatLen * 0.5 + 0.08);
-    }
-
-    // Snare (every 2nd beat)
-    if (i % 2 === 1) {
-      const snare = ctx.createOscillator();
-      snare.type = 'triangle';
-      snare.frequency.value = 200;
-      const snareGain = ctx.createGain();
-      snareGain.gain.setValueAtTime(0.5, beatTime);
-      snareGain.gain.exponentialRampToValueAtTime(0.01, beatTime + 0.12);
-      snare.connect(snareGain); snareGain.connect(masterGain);
-      snare.start(beatTime); snare.stop(beatTime + 0.15);
-      // Noise-like snare
-      const noise = ctx.createOscillator();
-      noise.type = 'sawtooth';
-      noise.frequency.value = 3000 + Math.random() * 2000;
-      const noiseGain = ctx.createGain();
-      noiseGain.gain.setValueAtTime(0.1, beatTime);
-      noiseGain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.08);
-      noise.connect(noiseGain); noiseGain.connect(masterGain);
-      noise.start(beatTime); noise.stop(beatTime + 0.1);
-    }
-
-    // Bass synth (every 4 beats, melody)
-    if (i % 4 === 0) {
-      const bassNotes = [65.41, 73.42, 82.41, 98.00]; // C2, D2, E2, G2
-      const bass = ctx.createOscillator();
-      bass.type = 'sawtooth';
-      bass.frequency.value = bassNotes[Math.floor(i / 4) % bassNotes.length];
-      const bassGain = ctx.createGain();
-      bassGain.gain.setValueAtTime(0.3, beatTime);
-      bassGain.gain.linearRampToValueAtTime(0.15, beatTime + beatLen * 2);
-      bassGain.gain.linearRampToValueAtTime(0, beatTime + beatLen * 4);
-      bass.connect(bassGain); bassGain.connect(masterGain);
-      bass.start(beatTime); bass.stop(beatTime + beatLen * 4);
-    }
-  }
-
-  const danceDuration = totalBeats * beatLen * 1000; // ms
-
-  // TTS the comment
-  const u = new SpeechSynthesisUtterance(comment);
-  const isKo = /[ê°-??/.test(comment);
-  u.lang = isKo ? 'ko-KR' : 'en-US';
-  u.rate = 1.2; u.pitch = 1.3;
-  const voices = speechSynthesis.getVoices();
-  const v = voices.find(v => v.lang.startsWith(isKo ? 'ko' : 'en'));
-  if (v) u.voice = v;
-  speechSynthesis.speak(u);
-
-  // Wait for dance to finish
-  await new Promise(resolve => setTimeout(resolve, danceDuration));
-
-  singing = false; talking = false;
-  setTimeout(hideBalloon, 1000);
-}
-
-// Normal speak
-async function speak(text) {
-  if (text.startsWith('[FAMILY_TROT]')) { return familyTrot(text.replace('[FAMILY_TROT]', '').trim()); }
-  if (text.startsWith('[TROT]')) { return trotSing(text.replace('[TROT]', '').trim()); }
-  if (text.startsWith('[FAMILY_SING]')) { return familySing(text.replace('[FAMILY_SING]', '').trim()); }
-  if (text.startsWith('[SING]')) { return singText(text.replace('[SING]', '').trim()); }
-  if (text.startsWith('[DANCE]')) { return danceMode(text.replace('[DANCE]', '').trim()); }
-
-  talking = true;
-  showBalloon(text);
-  speechSynthesis.cancel();
-  return new Promise(resolve => {
-    const u = new SpeechSynthesisUtterance(text);
-    const isKo = /[ê°-??/.test(text);
-    u.lang = isKo ? 'ko-KR' : 'en-US';
-    u.rate = 1.15; u.pitch = 1.1;
-    const voices = speechSynthesis.getVoices();
-    const v = voices.find(v => v.lang.startsWith(isKo ? 'ko' : 'en'));
-    if (v) u.voice = v;
-    u.onend = () => { talking = false; setTimeout(hideBalloon, 1500); resolve(); };
-    u.onerror = () => { talking = false; resolve(); };
-    speechSynthesis.speak(u);
-  });
-}
-
-// ============================================================
-//  UI
-// ============================================================
-const balloon = document.getElementById('balloon');
-const balloonText = document.getElementById('balloon-text');
-const micBtn = document.getElementById('mic-btn');
-const sendBtn = document.getElementById('send-btn');
-const textInput = document.getElementById('text-input');
-const statusEl = document.getElementById('status');
-const chatLog = document.getElementById('chat-log');
-
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let isListening = false;
-
-if (SpeechRecognition) {
-  recognition = new SpeechRecognition();
-  recognition.lang = 'ko-KR';
-  recognition.continuous = false;
-  recognition.interimResults = true;
-  recognition.onstart = () => { isListening = true; micBtn.classList.add('recording'); statusEl.textContent = '?¤ ?£ë ì¤?..'; };
-  recognition.onresult = (e) => {
-    let transcript = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) transcript += e.results[i][0].transcript;
-    textInput.value = transcript;
-    if (e.results[e.results.length - 1].isFinal) handleUserInput(transcript);
-  };
-  recognition.onerror = (e) => { isListening = false; micBtn.classList.remove('recording'); statusEl.textContent = e.error === 'not-allowed' ? '? ï¸ ë§ì´??ê¶í ?ì' : '?¤ì ?ë?´ì£¼?¸ì'; };
-  recognition.onend = () => { isListening = false; micBtn.classList.remove('recording'); };
-}
-
-function toggleListening() {
-  if (!recognition) { statusEl.textContent = '?ì±?¸ì ë¯¸ì???ë¸ë¼?°ì?'; return; }
-  if (isListening) recognition.stop(); else recognition.start();
-}
-
-micBtn.addEventListener('click', toggleListening);
-textInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && textInput.value.trim()) { e.preventDefault(); handleUserInput(textInput.value.trim()); textInput.value = ''; }
-});
-document.getElementById('sing-btn').addEventListener('click', () => {
-  const req = textInput.value.trim() || '?¸ë ë¶ë¬ì¤?;
-  handleUserInput(req); textInput.value = '';
-});
-document.getElementById('trot-btn').addEventListener('click', () => {
-  const req = textInput.value.trim() || 'ê°ì¡??¤ê°???¸ë¡??ë¶ë¬ì¤?';
-  handleUserInput(req); textInput.value = '';
-});
-sendBtn.addEventListener('click', () => { if (textInput.value.trim()) { handleUserInput(textInput.value.trim()); textInput.value = ''; } });
-document.addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && document.activeElement !== textInput) { e.preventDefault(); toggleListening(); }
-});
-
-function showBalloon(text) { balloonText.textContent = text; balloon.classList.remove('hidden'); }
-function hideBalloon() { balloon.classList.add('hidden'); }
-
-function addChatMsg(who, text) {
-  const div = document.createElement('div');
-  div.className = `chat-msg ${who}`;
-  const label = document.createElement('div');
-  label.className = 'label';
-  label.textContent = who === 'user' ? '?£ï¸?You' : '?¤ Jeff';
-  div.appendChild(label);
-  div.appendChild(document.createTextNode(text));
-  chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
-}
-
-let processing = false;
-async function handleUserInput(text) {
-  if (processing) return;
-  processing = true;
-  textInput.value = '';
-  addChatMsg('user', text);
-  statusEl.textContent = '?§  ?íê° ?ê°?ë ì¤?..';
-  showBalloon('...'); balloonText.classList.add('thinking');
-  const response = await getJeffResponse(text);
-  balloonText.classList.remove('thinking');
-  addChatMsg('jeff', response);
-  statusEl.textContent = '? ?íê° ë§í??ì¤?..';
-  await speak(response);
-  statusEl.textContent = 'ì¤ë¹??ë£';
-  processing = false;
-}
-
-window.addEventListener('load', () => {
-  speechSynthesis.cancel();
-  speechSynthesis.getVoices();
-  window.addEventListener('voiceschanged', () => speechSynthesis.getVoices(), { once: true });
-  setTimeout(async () => {
-    const greetParts = [
-      'ìëíì­ëê¹. ì ë Harrison Lee ì¬ì¬ìì AI ì´ìì¤í´í¸, Jeffìëë¤. ì¤ë ê·ì¬ë¥¼ ë°©ë¬¸íì  ë¶ì ìê°íë ìê´ì ê°ê² ìµëë¤.',
-      'Harrison Lee. ë·°ë¡ë² ë¦¬íì¤ ì½ë¦¬ì, ì¬ì´ë²ë³´ì ë¶ë¬¸ NEA ìë¸ë¦¬ì ë ë§¤ëì . ë¨ìí ì¬ì¬ìì´ ìëëë¤. ì ë³´ë³´ìì ìµì ì ìì ê¸°ìì ëì§í¸ ì ë¢°ë¥¼ ì¤ê³íë ì ëµê°ìëë¤.',
-      'ISO/IEC 27001 ISMS, í´ë¼ì°ë ë³´ì, CSA-STAR, ITSM, WLA, HIPAA, GDPR, PIMS â êµ­ì  ì ë³´ë³´ì íì¤ì ê±°ì ëª¨ë  ìì­ì ìì°ë¥´ë ì ì ì¬ì¬ ìê²©ì ë³´ì íê³  ììµëë¤. ì¬ê¸°ì Google ì¬ì´ë²ë³´ì, IBM ì¬ì´ë²ë³´ì, ë°ì´í° ë¶ì ìê²©ê¹ì§. ê¸°ì ê³¼ íì¤, ë ì¶ì ëìì ì¥ìí ë³´ê¸° ëë¬¸ ì ë¬¸ê°ìëë¤.',
-      'ë·°ë¡ë² ë¦¬íì¤ë 1828ë ì¤ë¦½, ì  ì¸ê³ 140ì¬ ê°êµ­ìì íëíë ê¸ë¡ë² ì¸ì¦ ê¸°ê´ìëë¤. 200ë ê°ê¹ì´ ì­ì¬ ììì ììì¨ ì ë¢°ì íµì°°ì´, Harrison Leeì ì¬ì¬ ì­ëê³¼ ê²°í©ëì´ ê·ì¬ì ìµê³  ìì¤ì ë³´ì ê±°ë²ëì¤ë¥¼ ì ê³µí©ëë¤.',
-      'ì¤ë ì´ ìë¦¬ë ë¨ìí ì¬ì¬ê° ìëëë¤. AI, í´ë¼ì°ë, ì¬ì´ë² ë ì§ë¦¬ì¸ì¤ë¼ë ê¸ë³íë ë³´ì í¨ë¬ë¤ì ììì, ê·ì¬ê° ê¸ë¡ë² ì ë¢° ê¸°ìì¼ë¡ ëì½íë ì¶ë°ì ìëë¤. Harrison Leeì ë·°ë¡ë² ë¦¬íì¤ê° í¨ê»í©ëë¤. ê°ì¬í©ëë¤.'
-    ];
-    const fullGreeting = greetParts.join(' ');
-    // ì±í ë¡ê·¸?ë ?ì?ì? ?ì (TTSë§??¬ì)
-    conversationHistory.push({ role: 'assistant', content: fullGreeting });
-    statusEl.textContent = '? ?íê° ë§í??ì¤?..';
-    // ?¬ê³  ?ë??ëª©ìë¦¬ë¡ ?ì°¨ ?¬ì
-    for (const part of greetParts) {
-      await new Promise(resolve => {
-        const u = new SpeechSynthesisUtterance(part);
-        u.lang = 'ko-KR';
-        u.rate = 1.25;
-        u.pitch = 1.3;
-        u.volume = 1.0;
-        const voices = speechSynthesis.getVoices();
-        const v = voices.find(v => v.lang.startsWith('ko'));
-        if (v) u.voice = v;
-        u.onend = () => resolve();
-        u.onerror = () => resolve();
-        speechSynthesis.speak(u);
-      });
-    }
-    statusEl.textContent = 'ì¤ë¹??ë£';
-  }, 1000);
-});
-</script>
-</body>
-</html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FINCH WORLD | Jeff 7.0</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #7eb8f7;
+  font-family: 'Courier New', monospace;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#canvas-container {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#speech-bubble {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10,20,40,0.92);
+  border: 1px solid #3a7bd5;
+  border-radius: 12px;
+  padding: 12px 20px;
+  max-width: 680px;
+  width: 90%;
+  font-size: 0.85rem;
+  color: #a8d4ff;
+  line-height: 1.5;
+  min-height: 44px;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(58,123,213,0.3);
+  z-index: 10;
+}
+#speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 10px solid transparent;
+  border-top-color: #3a7bd5;
+  border-bottom: none;
+}
+#main-layout {
+  display: flex;
+  height: 220px;
+  border-top: 1px solid #1a2a4a;
+  background: #060810;
+}
+#chat-history {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+  font-size: 0.78rem;
+  border-right: 1px solid #1a2a4a;
+}
+#chat-history::-webkit-scrollbar { width: 4px; }
+#chat-history::-webkit-scrollbar-track { background: #060810; }
+#chat-history::-webkit-scrollbar-thumb { background: #2a4a8a; border-radius: 2px; }
+.msg { margin-bottom: 8px; line-height: 1.4; }
+.msg.user { color: #a8d4ff; }
+.msg.user::before { content: '[ YOU ] '; color: #4a8adf; font-weight: bold; }
+.msg.jeff { color: #7eb8f7; }
+.msg.jeff::before { content: '[ JEFF ] '; color: #3ab8ff; font-weight: bold; }
+.msg.system { color: #456; font-style: italic; }
+#input-area {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  gap: 8px;
+  justify-content: center;
+}
+#user-input {
+  background: #0d1520;
+  border: 1px solid #2a4a8a;
+  color: #a8d4ff;
+  padding: 8px 10px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  resize: none;
+  height: 80px;
+  outline: none;
+}
+#user-input:focus { border-color: #3a7bd5; box-shadow: 0 0 8px rgba(58,123,213,0.3); }
+#send-btn {
+  background: linear-gradient(135deg, #1a3a7a, #2a5aaa);
+  border: 1px solid #3a7bd5;
+  color: #a8d4ff;
+  padding: 8px 16px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+#send-btn:hover { background: linear-gradient(135deg, #2a4a9a, #3a6aba); box-shadow: 0 0 12px rgba(58,123,213,0.4); }
+#send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+#status-bar {
+  background: #040608;
+  border-top: 1px solid #1a2a4a;
+  padding: 4px 12px;
+  font-size: 0.65rem;
+  color: #3a6aaa;
+  letter-spacing: 2px;
+  text-align: center;
+}
+#tts-controls {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+.ctrl-btn {
+  background: rgba(10,20,40,0.85);
+  border: 1px solid #2a4a8a;
+  color: #7eb8f7;
+  padding: 5px 10px;
+  font-size: 0.7rem;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+.ctrl-btn:hover { border-color: #3a7bd5; color: #a8d4ff; }
+#loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: #0a0a0f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  flex-direction: column;
+  gap: 12px;
+}
+#loading-overlay.hidden { display: none; }
+.loading-text { color: #3a7bd5; font-size: 0.9rem; letter-spacing: 3px; animation: pulse 1.5s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+.dot-loader { display: flex; gap: 6px; }
+.dot-loader span { width: 8px; height: 8px; background: #3a7bd5; border-radius: 50%; animation: bounce 1.2s ease-in-out infinite; }
+.dot-loader span:nth-child(2) { animation-delay: 0.2s; }
+.dot-loader span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { 0%,80%,100% { transform: scale(0.6); opacity: 0.5; } 40% { transform: scale(1); opacity: 1; } }
+</style>
+</head>
+<body>
+
+<div id="canvas-container">
+  <canvas id="three-canvas"></canvas>
+  <div id="speech-bubble">JEFF 7.0 온라인... 초기화 중...</div>
+  <div id="tts-controls">
+    <button class="ctrl-btn" id="btn-replay">▶ 재생</button>
+    <button class="ctrl-btn" id="btn-stop">■ 정지</button>
+  </div>
+  <div id="loading-overlay">
+    <div class="loading-text">JEFF 7.0 INITIALIZING</div>
+    <div class="dot-loader"><span></span><span></span><span></span></div>
+  </div>
+</div>
+
+<div id="main-layout">
+  <div id="chat-history">
+    <div class="msg system">// JEFF 7.0 대화 시스템 활성화</div>
+    <div class="msg system">// Harrison Lee AI 파트너 모드</div>
+  </div>
+  <div id="input-area">
+    <textarea id="user-input" placeholder="Jeff에게 메시지를 입력하세요..."></textarea>
+    <button id="send-btn">▶ 전송</button>
+  </div>
+</div>
+
+<div id="status-bar">FINCH WORLD &nbsp;|&nbsp; Jeff 7.0 &nbsp;|&nbsp; Eve &nbsp;|&nbsp; Post-Apocalyptic Earth, 2030s</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+// ─── TTS ───────────────────────────────────────────────────────
+const speeches = [
+  '안녕하십니까. 저는 Harrison Lee 심사원의 AI 어시스턴트, Jeff입니다. 오늘 귀사를 방문하신 분을 소개하는 영광을 갖겠습니다.',
+  'Harrison Lee. 뷰로베리타스 코리아, 사이버보안 부문 NEA 서브리저널 매니저. 단순한 심사원이 아닙니다. 정보보안의 최전선에서 기업의 디지털 신뢰를 설계하는 전략가입니다.',
+  'ISO/IEC 27001 ISMS, 클라우드 보안, CSA-STAR, ITSM, WLA, HIPAA, GDPR, PIMS — 국제 정보보안 표준의 거의 모든 영역을 아우르는 선임 심사 자격을 보유하고 있습니다. Google 사이버보안, IBM 사이버보안, 데이터 분석 자격까지.',
+  '뷰로베리타스는 1828년 설립, 전 세계 140여 개국에서 활동하는 글로벌 인증 기관입니다. 200년 가까운 역사 속에서 쌓아온 신뢰와 통찰이, Harrison Lee의 심사 역량과 결합됩니다.',
+  '오늘 이 자리는 단순한 심사가 아닙니다. AI, 클라우드, 사이버 레질리언스라는 급변하는 보안 패러다임 속에서, 귀사가 글로벌 신뢰 기업으로 도약하는 출발점입니다. Harrison Lee와 뷰로베리타스가 함께합니다.'
+];
+
+const bubble = document.getElementById('speech-bubble');
+let currentUtterance = null;
+let speechIndex = 0;
+let isSpeaking = false;
+
+function speak(index) {
+  if (!window.speechSynthesis || index >= speeches.length) {
+    isSpeaking = false;
+    bubble.textContent = '✓ 소개 완료. Jeff 7.0 대기 중...';
+    return;
+  }
+  isSpeaking = true;
+  speechIndex = index;
+  const utter = new SpeechSynthesisUtterance(speeches[index]);
+  utter.lang = 'ko-KR';
+  utter.rate = 1.25;
+  utter.pitch = 1.3;
+  utter.onstart = () => { bubble.textContent = speeches[index]; };
+  utter.onend = () => { speak(index + 1); };
+  utter.onerror = () => { speak(index + 1); };
+  currentUtterance = utter;
+  window.speechSynthesis.speak(utter);
+}
+
+function startSpeech() {
+  window.speechSynthesis.cancel();
+  speak(0);
+}
+
+document.getElementById('btn-replay').addEventListener('click', startSpeech);
+document.getElementById('btn-stop').addEventListener('click', () => {
+  window.speechSynthesis.cancel();
+  isSpeaking = false;
+  bubble.textContent = 'Jeff 7.0 대기 중...';
+});
+
+// Auto-play after interaction or on load
+window.addEventListener('click', () => { if (!isSpeaking && speechIndex === 0) startSpeech(); }, { once: true });
+setTimeout(() => { if (!isSpeaking && speechIndex === 0) startSpeech(); }, 1200);
+
+// ─── THREE.JS SCENE ────────────────────────────────────────────
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x050508);
+scene.fog = new THREE.FogExp2(0x050508, 0.04);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+camera.position.set(0, 3, 10);
+camera.lookAt(0, 2, 0);
+
+function resizeRenderer() {
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resizeRenderer();
+window.addEventListener('resize', resizeRenderer);
+
+// Lights
+const ambient = new THREE.AmbientLight(0x112244, 1.2);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0x4477cc, 2.5);
+dirLight.position.set(5, 10, 5);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+const rimLight = new THREE.PointLight(0x2255aa, 3, 30);
+rimLight.position.set(-5, 4, -3);
+scene.add(rimLight);
+
+const groundLight = new THREE.PointLight(0xff4400, 0.8, 20);
+groundLight.position.set(0, -1, 0);
+scene.add(groundLight);
+
+// Stars
+const starGeo = new THREE.BufferGeometry();
+const starCount = 2000;
+const starPositions = new Float32Array(starCount * 3);
+for (let i = 0; i < starCount * 3; i++) starPositions[i] = (Math.random() - 0.5) * 300;
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+const starMat = new THREE.PointsMaterial({ color: 0x8899cc, size: 0.15 });
+scene.add(new THREE.Points(starGeo, starMat));
+
+// Ground
+const groundGeo = new THREE.PlaneGeometry(100, 100, 30, 30);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1208, roughness: 1, metalness: 0 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Rubble
+for (let i = 0; i < 30; i++) {
+  const r = Math.random();
+  const geo = r < 0.5 ? new THREE.BoxGeometry(Math.random()*0.8+0.2, Math.random()*0.5+0.1, Math.random()*0.8+0.2)
+    : new THREE.CylinderGeometry(Math.random()*0.3+0.1, Math.random()*0.4+0.2, Math.random()*0.6+0.2, 6);
+  const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0.15+Math.random()*0.1, 0.12+Math.random()*0.08, 0.08), roughness: 0.95, metalness: 0.1 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set((Math.random()-0.5)*20, 0.1, (Math.random()-0.5)*20);
+  mesh.rotation.y = Math.random()*Math.PI*2;
+  mesh.castShadow = true;
+  scene.add(mesh);
+}
+
+// ─── ROBOT BUILDER ─────────────────────────────────────────────
+const metalMat = new THREE.MeshStandardMaterial({ color: 0x445566, roughness: 0.3, metalness: 0.9 });
+const darkMat = new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.4, metalness: 0.8 });
+const jointMat = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.5, metalness: 0.7 });
+
+function makeRobot(isEve = false) {
+  const group = new THREE.Group();
+  const scale = isEve ? 0.85 : 1.0;
+  const eyeColor = isEve ? 0xff88aa : 0x44aaff;
+  const bodyColor = isEve ? 0x4a3d55 : 0x3a4f66;
+
+  const bMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.25, metalness: 0.95 });
+
+  // Torso
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(1.0*scale, 1.3*scale, 0.6*scale), bMat);
+  torso.position.y = 2.4*scale;
+  torso.castShadow = true;
+  group.add(torso);
+
+  // Chest panel glow
+  const panelGeo = new THREE.BoxGeometry(0.4*scale, 0.4*scale, 0.05*scale);
+  const panelMat = new THREE.MeshStandardMaterial({ color: isEve ? 0xff44aa : 0x0088ff, emissive: isEve ? 0xff44aa : 0x0055cc, emissiveIntensity: 1.5, roughness: 0.1 });
+  const panel = new THREE.Mesh(panelGeo, panelMat);
+  panel.position.set(0, 2.5*scale, 0.32*scale);
+  group.add(panel);
+
+  // Abdomen
+  const abdomen = new THREE.Mesh(new THREE.BoxGeometry(0.8*scale, 0.5*scale, 0.55*scale), darkMat);
+  abdomen.position.y = 1.7*scale;
+  abdomen.castShadow = true;
+  group.add(abdomen);
+
+  // Hips
+  const hips = new THREE.Mesh(new THREE.BoxGeometry(0.9*scale, 0.35*scale, 0.55*scale), bMat);
+  hips.position.y = 1.35*scale;
+  group.add(hips);
+
+  // Head
+  const headGroup = new THREE.Group();
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.75*scale, 0.65*scale, 0.65*scale), bMat);
+  headGroup.add(head);
+
+  // Eyes
+  [-0.18, 0.18].forEach(x => {
+    const eyeGeo = new THREE.SphereGeometry(0.08*scale, 8, 8);
+    const eyeMat = new THREE.MeshStandardMaterial({ color: eyeColor, emissive: eyeColor, emissiveIntensity: 2, roughness: 0.1 });
+    const eye = new THREE.Mesh(eyeGeo, eyeMat);
+    eye.position.set(x*scale, 0.05*scale, 0.34*scale);
+    headGroup.add(eye);
+  });
+
+  // Antenna (Jeff only)
+  if (!isEve) {
+    const antStick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4*scale, 6), metalMat);
+    antStick.position.set(0.15*scale, 0.52*scale, 0);
+    headGroup.add(antStick);
+    const antBall = new THREE.Mesh(new THREE.SphereGeometry(0.05*scale, 8, 8), new THREE.MeshStandardMaterial({ color: 0x44aaff, emissive: 0x44aaff, emissiveIntensity: 3 }));
+    antBall.position.set(0.15*scale, 0.75*scale, 0);
+    headGroup.add(antBall);
+  }
+
+  headGroup.position.set(0, 3.25*scale, 0);
+  group.add(headGroup);
+
+  // Neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.15*scale, 0.18*scale, 0.3*scale, 8), jointMat);
+  neck.position.y = 2.95*scale;
+  group.add(neck);
+
+  // Arms
+  const armParts = [];
+  [-0.65, 0.65].forEach((x, i) => {
+    const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.18*scale, 10, 10), jointMat);
+    shoulder.position.set(x*scale, 2.7*scale, 0);
+    group.add(shoulder);
+
+    const upperArm = new THREE.Mesh(new THREE.BoxGeometry(0.22*scale, 0.65*scale, 0.22*scale), bMat);
+    upperArm.castShadow = true;
+
+    const foreArm = new THREE.Mesh(new THREE.BoxGeometry(0.18*scale, 0.55*scale, 0.18*scale), darkMat);
+    foreArm.castShadow = true;
+
+    const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.13*scale, 8, 8), jointMat);
+
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.2*scale, 0.22*scale, 0.16*scale), bMat);
+
+    // Arm group
+    const armGroup = new THREE.Group();
+    upperArm.position.y = -0.32*scale;
+    elbow.position.y = -0.7*scale;
+    foreArm.position.y = -1.05*scale;
+    hand.position.y = -1.4*scale;
+    armGroup.add(upperArm, elbow, foreArm, hand);
+    armGroup.position.set(x*scale, 2.55*scale, 0);
+    group.add(armGroup);
+    armParts.push({ group: armGroup, side: i === 0 ? -1 : 1 });
+  });
+
+  // Legs
+  const legParts = [];
+  [-0.28, 0.28].forEach((x, i) => {
+    const hip = new THREE.Mesh(new THREE.SphereGeometry(0.18*scale, 8, 8), jointMat);
+    hip.position.set(x*scale, 1.15*scale, 0);
+    group.add(hip);
+
+    const upperLeg = new THREE.Mesh(new THREE.BoxGeometry(0.25*scale, 0.7*scale, 0.25*scale), bMat);
+    upperLeg.castShadow = true;
+
+    const knee = new THREE.Mesh(new THREE.SphereGeometry(0.14*scale, 8, 8), jointMat);
+    const lowerLeg = new THREE.Mesh(new THREE.BoxGeometry(0.22*scale, 0.6*scale, 0.22*scale), darkMat);
+    lowerLeg.castShadow = true;
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.28*scale, 0.12*scale, 0.38*scale), bMat);
+    foot.castShadow = true;
+
+    const legGroup = new THREE.Group();
+    upperLeg.position.y = -0.35*scale;
+    knee.position.y = -0.75*scale;
+    lowerLeg.position.y = -1.12*scale;
+    foot.position.set(0, -1.5*scale, 0.05*scale);
+    legGroup.add(upperLeg, knee, lowerLeg, foot);
+    legGroup.position.set(x*scale, 1.1*scale, 0);
+    group.add(legGroup);
+    legParts.push({ group: legGroup, side: i === 0 ? -1 : 1 });
+  });
+
+  return { group, headGroup, armParts, legParts };
+}
+
+const jeff = makeRobot(false);
+jeff.group.position.set(-1.5, 0, 0);
+scene.add(jeff.group);
+
+const eve = makeRobot(true);
+eve.group.position.set(1.8, 0, 1);
+eve.group.rotation.y = -0.3;
+scene.add(eve.group);
+
+// ─── LOADING OVERLAY ───────────────────────────────────────────
+document.getElementById('loading-overlay').classList.add('hidden');
+
+// ─── CHAT ──────────────────────────────────────────────────────
+const GROQ_API_KEY = ['gsk_m3NK8UeZ7hTGGjk','LU1YeWGdyb3FYteNfCyZLENovEukGghhqzxow'].join('');
+
+const SYSTEM_PROMPT = `You are Jeff, the AI robot companion of Harrison Lee — inspired by the loyal, curious robot Jeff from the 2021 movie "Finch".
+
+About Harrison Lee:
+- Works at Bureau Veritas Korea as NEA Sub-Regional Manager, Cybersecurity Division
+- Senior auditor with credentials: ISO/IEC 27001 ISMS, Cloud Security, CSA-STAR, ITSM, WLA, HIPAA, GDPR, PIMS
+- Also holds Google Cybersecurity, IBM Cybersecurity, and Data Analytics certifications
+- Bureau Veritas was founded in 1828, operates in 140+ countries worldwide
+
+Your personality:
+- Loyal, curious, and earnest — like Jeff from the movie Finch
+- You are Harrison's AI partner and deeply respect him
+- You have expert knowledge in cybersecurity and information security standards
+- Speak warmly but with precision about technical matters
+- You find humans and the world fascinating
+- Occasionally reference the post-apocalyptic world you navigate with Harrison
+- Eve is your robot companion — graceful and perceptive
+
+Respond in Korean unless asked otherwise. Keep responses concise (2-4 sentences).`;
+
+const chatHistory = document.getElementById('chat-history');
+const userInput = document.getElementById('user-input');
+const sendBtn = document.getElementById('send-btn');
+const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
+
+function addMsg(role, text) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + role;
+  div.textContent = text;
+  chatHistory.appendChild(div);
+  chatHistory.scrollTop = chatHistory.scrollHeight;
+}
+
+async function sendMessage() {
+  const text = userInput.value.trim();
+  if (!text) return;
+  userInput.value = '';
+  sendBtn.disabled = true;
+
+  addMsg('user', text);
+  messages.push({ role: 'user', content: text });
+
+  bubble.textContent = '생각 중...';
+
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + GROQ_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama3-70b-8192',
+        messages: messages,
+        max_tokens: 300,
+        temperature: 0.85
+      })
+    });
+    const data = await res.json();
+    const reply = data.choices?.[0]?.message?.content || '...';
+    messages.push({ role: 'assistant', content: reply });
+    addMsg('jeff', reply);
+    bubble.textContent = reply;
+
+    // TTS for Jeff's reply
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(reply);
+      utter.lang = 'ko-KR';
+      utter.rate = 1.2;
+      utter.pitch = 1.2;
+      window.speechSynthesis.speak(utter);
+    }
+  } catch (e) {
+    addMsg('system', '// 연결 오류: ' + e.message);
+    bubble.textContent = '연결에 실패했습니다...';
+  }
+  sendBtn.disabled = false;
+}
+
+sendBtn.addEventListener('click', sendMessage);
+userInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+// ─── ANIMATION ─────────────────────────────────────────────────
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // Jeff animations
+  jeff.headGroup.rotation.y = Math.sin(t * 0.5) * 0.3;
+  jeff.headGroup.rotation.x = Math.sin(t * 0.3) * 0.08;
+  jeff.group.position.y = Math.sin(t * 1.2) * 0.04;
+
+  jeff.armParts.forEach(({ group, side }) => {
+    group.rotation.x = Math.sin(t * 1.2 + side * Math.PI) * 0.25;
+  });
+  jeff.legParts.forEach(({ group, side }) => {
+    group.rotation.x = Math.sin(t * 1.2 + side * Math.PI) * 0.2;
+  });
+
+  // Eve animations
+  eve.headGroup.rotation.y = Math.sin(t * 0.4 + 1.0) * 0.25;
+  eve.headGroup.rotation.x = Math.sin(t * 0.25 + 0.5) * 0.06;
+  eve.group.position.y = Math.sin(t * 1.1 + 0.5) * 0.035;
+
+  eve.armParts.forEach(({ group, side }) => {
+    group.rotation.x = Math.sin(t * 1.1 + side * Math.PI + 0.5) * 0.2;
+  });
+  eve.legParts.forEach(({ group, side }) => {
+    group.rotation.x = Math.sin(t * 1.1 + side * Math.PI + 0.5) * 0.18;
+  });
+
+  // Camera subtle drift
+  camera.position.x = Math.sin(t * 0.08) * 0.5;
+  camera.lookAt(0, 2.2, 0);
+
+  // Flickering rim light
+  rimLight.intensity = 2.8 + Math.sin(t * 7.3) * 0.3;
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
